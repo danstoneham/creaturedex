@@ -12,9 +12,19 @@ export default function AnimalCard({ animal }: AnimalCardProps) {
   return (
     <Link href={`/animals/${animal.slug}`}>
       <Card hover>
-        <div className="aspect-[4/3] bg-gradient-to-br from-primary-light/20 to-primary/10 flex items-center justify-center">
-          <span className="text-5xl">🐾</span>
-        </div>
+        {animal.imageUrl ? (
+          <div className="aspect-[4/3] overflow-hidden">
+            <img
+              src={animal.imageUrl}
+              alt={animal.commonName}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        ) : (
+          <div className="aspect-[4/3] bg-gradient-to-br from-primary-light/20 to-primary/10 flex items-center justify-center">
+            <span className="text-5xl">🐾</span>
+          </div>
+        )}
         <div className="p-4">
           <h3 className="font-semibold text-text truncate">{animal.commonName}</h3>
           {animal.scientificName && (

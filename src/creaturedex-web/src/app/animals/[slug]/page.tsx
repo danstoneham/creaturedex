@@ -180,10 +180,20 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             )}
           </div>
 
-          {/* Image placeholder */}
-          <div className="aspect-video bg-gradient-to-br from-primary-light/20 to-primary/10 rounded-xl flex items-center justify-center mb-8">
-            <span className="text-8xl">{"\ud83d\udc3e"}</span>
-          </div>
+          {/* Hero image */}
+          {animal.imageUrl ? (
+            <div className="aspect-video rounded-xl overflow-hidden mb-8">
+              <img
+                src={animal.imageUrl}
+                alt={animal.commonName}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="aspect-video bg-gradient-to-br from-primary-light/20 to-primary/10 rounded-xl flex items-center justify-center mb-8">
+              <span className="text-8xl">{"\ud83d\udc3e"}</span>
+            </div>
+          )}
 
           {/* Summary */}
           <p className="text-lg text-text leading-relaxed mb-8">{animal.summary}</p>
