@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AnimalGrid from "@/components/animals/AnimalGrid";
 import type { AnimalCard } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const categories = [
   { name: "All", slug: "" },
@@ -23,7 +24,29 @@ export default function BrowsePage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [petsOnly, setPetsOnly] = useState(false);
   const [sortBy, setSortBy] = useState("name");
-  const [animals] = useState<AnimalCard[]>([]); // TODO: fetch from API
+  const [animals, setAnimals] = useState<AnimalCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+
+  useEffect(() => {
+    const fetchAnimals = async () => {
+      setLoading(true);
+      try {
+        const params: Record<string, string> = {};
+        if (selectedCategory) params.category = selectedCategory;
+        if (petsOnly) params.isPet = "true";
+        if (sortBy) params.sortBy = sortBy;
+        const res = await api.animals.browse(params);
+        setAnimals(res.animals);
+        setTotalCount(res.totalCount);
+      } catch (err) {
+        console.error("Failed to fetch animals:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAnimals();
+  }, [selectedCategory, petsOnly, sortBy]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -83,7 +106,7 @@ export default function BrowsePage() {
 
         {/* Animal grid */}
         <div className="flex-1">
-          <AnimalGrid animals={animals} loading={false} />
+          <AnimalGrid animals={animals} loading={loading} />
         </div>
       </div>
     </div>

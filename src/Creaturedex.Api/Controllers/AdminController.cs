@@ -1,3 +1,4 @@
+using Creaturedex.AI.Services;
 using Creaturedex.Api.Services;
 using Creaturedex.Data.Repositories;
 using Creaturedex.Shared.Requests;
@@ -9,6 +10,7 @@ namespace Creaturedex.Api.Controllers;
 [Route("api/admin")]
 public class AdminController(
     ContentGenerationService contentGenService,
+    ContentGeneratorService contentGenerator,
     AnimalRepository animalRepo) : ControllerBase
 {
     [HttpGet("status")]
@@ -19,17 +21,20 @@ public class AdminController(
     }
 
     [HttpPost("generate")]
-    public async Task<IActionResult> Generate([FromBody] GenerateAnimalRequest request)
+    public async Task<IActionResult> Generate([FromBody] GenerateAnimalRequest request, CancellationToken ct)
     {
-        // TODO: Wire up AI content generation pipeline
-        return Ok(new { message = $"Generation queued for {request.AnimalName}" });
+        var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, ct);
+        if (id == null)
+            return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
+        return Ok(new { id, message = $"Generated {request.AnimalName}" });
     }
 
     [HttpPost("generate/batch")]
-    public async Task<IActionResult> GenerateBatch([FromBody] BatchGenerateRequest request)
+    public async Task<IActionResult> GenerateBatch([FromBody] BatchGenerateRequest request, CancellationToken ct)
     {
-        // TODO: Wire up AI batch content generation pipeline
-        return Ok(new { message = $"Batch generation queued for {request.Animals.Count} animals" });
+        var names = request.Animals.Select(a => a.AnimalName).ToList();
+        var results = await contentGenerator.BatchGenerateAsync(names, ct);
+        return Ok(results.Select(r => new { name = r.Name, id = r.Id, error = r.Error }));
     }
 
     [HttpGet("review")]

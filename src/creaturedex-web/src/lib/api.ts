@@ -27,9 +27,10 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   animals: {
-    browse: (params?: Record<string, string>) => {
+    browse: async (params?: Record<string, string>) => {
       const query = params ? `?${new URLSearchParams(params)}` : "";
-      return fetchApi<AnimalCard[]>(`/api/animals${query}`);
+      const res = await fetchApi<{ animals: AnimalCard[]; totalCount: number }>(`/api/animals${query}`);
+      return res;
     },
     getBySlug: (slug: string) =>
       fetchApi<AnimalProfile>(`/api/animals/${slug}`),

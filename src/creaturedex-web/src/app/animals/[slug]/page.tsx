@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import Tabs from "@/components/ui/Tabs";
@@ -10,15 +10,36 @@ import CareSection from "@/components/animals/CareSection";
 import ConservationBadge from "@/components/animals/ConservationBadge";
 import DifficultyRating from "@/components/animals/DifficultyRating";
 import type { AnimalProfile } from "@/lib/types";
-
-// TODO: Replace with API fetch
-const mockProfile: AnimalProfile | null = null;
+import { api } from "@/lib/api";
 
 export default function AnimalProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const [profile, setProfile] = useState<AnimalProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // TODO: Fetch from /api/animals/{slug}
-  const profile = mockProfile;
+  useEffect(() => {
+    const fetchProfile = async () => {
+      setLoading(true);
+      try {
+        const data = await api.animals.getBySlug(slug);
+        setProfile(data);
+      } catch (err) {
+        console.error("Failed to fetch animal:", err);
+        setProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-12 text-center">
+        <p className="text-text-muted">Loading...</p>
+      </div>
+    );
+  }
 
   if (!profile) {
     return (
