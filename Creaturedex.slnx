@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Creaturedex.AI/Creaturedex.AI.csproj" />
+    <Project Path="src/Creaturedex.Api/Creaturedex.Api.csproj" />
+    <Project Path="src/Creaturedex.Core/Creaturedex.Core.csproj" />
+    <Project Path="src/Creaturedex.Data/Creaturedex.Data.csproj" />
+    <Project Path="src/Creaturedex.Shared/Creaturedex.Shared.csproj" />
+  </Folder>
+</Solution>

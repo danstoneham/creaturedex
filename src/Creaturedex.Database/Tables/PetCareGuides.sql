@@ -1,0 +1,22 @@
+CREATE TABLE [dbo].[PetCareGuides] (
+    [Id]                  UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    [AnimalId]            UNIQUEIDENTIFIER NOT NULL,
+    [DifficultyRating]    INT              NOT NULL DEFAULT 3,
+    [CostRangeMin]        DECIMAL(10,2)    NULL,
+    [CostRangeMax]        DECIMAL(10,2)    NULL,
+    [CostCurrency]        NVARCHAR(3)      NOT NULL DEFAULT 'GBP',
+    [SpaceRequirement]    NVARCHAR(200)    NULL,
+    [TimeCommitment]      NVARCHAR(200)    NULL,
+    [Housing]             NVARCHAR(MAX)    NULL,
+    [DietAsPet]           NVARCHAR(MAX)    NULL,
+    [Exercise]            NVARCHAR(MAX)    NULL,
+    [Grooming]            NVARCHAR(MAX)    NULL,
+    [HealthConcerns]      NVARCHAR(MAX)    NULL,
+    [Training]            NVARCHAR(MAX)    NULL,
+    [GoodWithChildren]    BIT              NULL,
+    [GoodWithOtherPets]   BIT              NULL,
+    [Temperament]         NVARCHAR(MAX)    NULL,
+    [LegalConsiderations] NVARCHAR(MAX)    NULL,
+    CONSTRAINT [PK_PetCareGuides] PRIMARY KEY CLUSTERED ([Id]),
+    CONSTRAINT [FK_PetCareGuides_Animals] FOREIGN KEY ([AnimalId]) REFERENCES [dbo].[Animals]([Id]) ON DELETE CASCADE
+);

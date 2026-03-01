@@ -1,0 +1,1 @@
+CREATE FULLTEXT CATALOG [CreaturedexCatalog] AS DEFAULT;
