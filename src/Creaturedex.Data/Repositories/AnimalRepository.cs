@@ -140,4 +140,12 @@ public class AnimalRepository(DbConnectionFactory db)
         await conn.ExecuteAsync(
             "UPDATE Animals SET IsPublished = 1, UpdatedAt = SYSUTCDATETIME() WHERE DeletedAt IS NULL AND IsPublished = 0");
     }
+
+    public async Task UpdateImageUrlAsync(Guid id, string imageUrl)
+    {
+        using var conn = db.CreateConnection();
+        await conn.ExecuteAsync(
+            "UPDATE Animals SET ImageUrl = @ImageUrl, UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id AND DeletedAt IS NULL",
+            new { Id = id, ImageUrl = imageUrl });
+    }
 }

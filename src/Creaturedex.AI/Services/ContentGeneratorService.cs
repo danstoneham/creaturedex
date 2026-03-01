@@ -8,6 +8,7 @@ namespace Creaturedex.AI.Services;
 public class ContentGeneratorService(
     AIService aiService,
     EmbeddingService embeddingService,
+    ImageGenerationService imageService,
     AnimalRepository animalRepo,
     CategoryRepository categoryRepo,
     TaxonomyRepository taxonomyRepo,
@@ -200,6 +201,19 @@ public class ContentGeneratorService(
             // Generate embedding
             var embeddingText = $"{animal.CommonName} {animal.Summary} {animal.Description} {string.Join(" ", funFacts)}";
             await embeddingService.GenerateAndStoreAsync(animalId, embeddingText, aiConfig.EmbeddingModel);
+
+            // Generate image via Stable Diffusion (only if enabled)
+            if (aiConfig.AutoGenerateImages)
+            {
+                var imageUrl = await imageService.GenerateAnimalImageAsync(
+                    animal.CommonName, animal.Slug, animal.ScientificName,
+                    animal.Summary, animal.Description, animal.Habitat, animal.SizeInfo, ct);
+                if (imageUrl != null)
+                {
+                    await animalRepo.UpdateImageUrlAsync(animalId, imageUrl);
+                    logger.LogInformation("Generated image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
+                }
+            }
 
             logger.LogInformation("Successfully generated: {AnimalName} (ID: {Id})", animalName, animalId);
             return animalId;

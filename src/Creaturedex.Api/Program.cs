@@ -38,6 +38,10 @@ var ollamaEmbedder = new OllamaApiClient(new Uri(aiConfig.OllamaEndpoint));
 ollamaEmbedder.SelectedModel = aiConfig.EmbeddingModel;
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(ollamaEmbedder);
 
+builder.Services.AddHttpClient<ImageGenerationService>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5); // Image generation can be slow
+});
 builder.Services.AddScoped<AIService>();
 builder.Services.AddScoped<EmbeddingService>();
 builder.Services.AddScoped<ContentGeneratorService>();
@@ -82,9 +86,19 @@ if (!MigrationRunner.Run(connectionString))
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
+// Ensure image storage directory exists
+var imageStoragePath = Path.Combine(AppContext.BaseDirectory, aiConfig.ImageStoragePath);
+Directory.CreateDirectory(imageStoragePath);
+
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
 app.UseCors();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+        Path.Combine(AppContext.BaseDirectory, "wwwroot")),
+    RequestPath = ""
+});
 app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));

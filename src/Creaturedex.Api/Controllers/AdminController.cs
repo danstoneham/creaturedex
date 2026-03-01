@@ -11,6 +11,7 @@ namespace Creaturedex.Api.Controllers;
 public class AdminController(
     ContentGenerationService contentGenService,
     ContentGeneratorService contentGenerator,
+    ImageGenerationService imageService,
     AnimalRepository animalRepo) : ControllerBase
 {
     [HttpGet("status")]
@@ -64,4 +65,76 @@ public class AdminController(
         await animalRepo.PublishAllAsync();
         return Ok(new { message = "All animals published" });
     }
+
+    /// <summary>
+    /// Test image generation with a custom prompt. Returns the generated image URL, the prompt used, and the seed.
+    /// </summary>
+    [HttpPost("image/test")]
+    public async Task<IActionResult> TestImageGeneration([FromBody] TestImageRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var fileName = $"test-{DateTime.UtcNow:yyyyMMdd-HHmmss}.png";
+            var result = await imageService.GenerateWithCustomPromptAsync(request.Prompt, fileName, null, ct);
+            if (result == null)
+                return StatusCode(500, new { error = "Image generation returned null" });
+
+            return Ok(new { imageUrl = result.ImageUrl, prompt = result.PromptUsed, seed = result.Seed });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message, detail = ex.InnerException?.Message });
+        }
+    }
+
+    /// <summary>
+    /// Preview the full positive and negative prompts that would be generated for an animal.
+    /// </summary>
+    [HttpGet("image/preview-prompt")]
+    public IActionResult PreviewPrompt([FromQuery] string animalName, [FromQuery] string? summary = null,
+        [FromQuery] string? description = null, [FromQuery] string? habitat = null, [FromQuery] string? sizeInfo = null)
+    {
+        var prompt = ImageGenerationService.BuildPrompt(animalName, null, summary ?? "", description, habitat, sizeInfo);
+        var negativePrompt = ImageGenerationService.GetNegativePrompt();
+        return Ok(new { prompt, negativePrompt });
+    }
+
+    /// <summary>
+    /// Preview the prompt that would be used for an existing animal by ID.
+    /// </summary>
+    [HttpGet("image/preview-prompt/{id:guid}")]
+    public async Task<IActionResult> PreviewPromptForAnimal(Guid id)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null)
+            return NotFound(new { error = "Animal not found" });
+
+        var prompt = ImageGenerationService.BuildPrompt(
+            animal.CommonName, animal.ScientificName, animal.Summary,
+            animal.Description, animal.Habitat, animal.SizeInfo);
+        var negativePrompt = ImageGenerationService.GetNegativePrompt();
+        return Ok(new { animalName = animal.CommonName, prompt, negativePrompt });
+    }
+
+    /// <summary>
+    /// Generate (or regenerate) an image for an existing animal by ID.
+    /// </summary>
+    [HttpPost("image/generate/{id:guid}")]
+    public async Task<IActionResult> GenerateImageForAnimal(Guid id, CancellationToken ct)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null)
+            return NotFound(new { error = "Animal not found" });
+
+        var imageUrl = await imageService.GenerateAnimalImageAsync(
+            animal.CommonName, animal.Slug, animal.ScientificName,
+            animal.Summary, animal.Description, animal.Habitat, animal.SizeInfo, ct);
+        if (imageUrl == null)
+            return StatusCode(500, new { error = $"Image generation failed for {animal.CommonName}" });
+
+        await animalRepo.UpdateImageUrlAsync(id, imageUrl);
+        return Ok(new { imageUrl, animalName = animal.CommonName });
+    }
 }
+
+public record TestImageRequest(string Prompt);
