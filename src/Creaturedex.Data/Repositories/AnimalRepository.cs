@@ -118,6 +118,14 @@ public class AnimalRepository(DbConnectionFactory db)
             "SELECT * FROM Animals WHERE DeletedAt IS NULL AND IsPublished = 0 ORDER BY CreatedAt DESC");
     }
 
+    public async Task MarkReviewedAsync(Guid id)
+    {
+        using var conn = db.CreateConnection();
+        await conn.ExecuteAsync(
+            "UPDATE Animals SET ReviewedAt = SYSUTCDATETIME(), UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id",
+            new { Id = id });
+    }
+
     public async Task PublishAsync(Guid id)
     {
         using var conn = db.CreateConnection();

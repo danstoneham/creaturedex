@@ -10,7 +10,7 @@ public class EmbeddingService(
     public async Task<float[]> GenerateAsync(string text, CancellationToken ct = default)
     {
         var embedding = await embeddingGenerator.GenerateAsync(text, cancellationToken: ct);
-        return embedding.First().Vector.ToArray();
+        return embedding.Vector.ToArray();
     }
 
     public async Task GenerateAndStoreAsync(Guid animalId, string text, string modelUsed, CancellationToken ct = default)

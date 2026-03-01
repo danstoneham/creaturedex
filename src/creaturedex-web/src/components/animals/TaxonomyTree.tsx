@@ -20,7 +20,7 @@ export default function TaxonomyTree({ taxonomy }: TaxonomyTreeProps) {
     <div className="space-y-1">
       {ranks.map(({ key, label }, i) => {
         const value = taxonomy[key as keyof Taxonomy];
-        if (!value || key === "id") return null;
+        if (!value) return null;
 
         return (
           <div key={key} className="flex items-center" style={{ paddingLeft: `${i * 16}px` }}>
