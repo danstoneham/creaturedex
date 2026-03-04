@@ -57,9 +57,11 @@ public class AnimalService(
         return (cards, totalCount);
     }
 
-    public async Task<AnimalProfileResponse?> GetBySlugAsync(string slug)
+    public async Task<AnimalProfileResponse?> GetBySlugAsync(string slug, bool includeUnpublished = false)
     {
-        var animal = await animalRepo.GetBySlugAsync(slug);
+        var animal = includeUnpublished
+            ? await animalRepo.GetBySlugIncludingUnpublishedAsync(slug)
+            : await animalRepo.GetBySlugAsync(slug);
         if (animal == null) return null;
 
         var taxonomy = animal.TaxonomyId.HasValue

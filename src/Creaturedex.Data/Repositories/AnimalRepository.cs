@@ -13,6 +13,14 @@ public class AnimalRepository(DbConnectionFactory db)
             new { Slug = slug });
     }
 
+    public async Task<Animal?> GetBySlugIncludingUnpublishedAsync(string slug)
+    {
+        using var conn = db.CreateConnection();
+        return await conn.QuerySingleOrDefaultAsync<Animal>(
+            "SELECT * FROM Animals WHERE Slug = @Slug AND DeletedAt IS NULL",
+            new { Slug = slug });
+    }
+
     public async Task<Animal?> GetByIdAsync(Guid id)
     {
         using var conn = db.CreateConnection();

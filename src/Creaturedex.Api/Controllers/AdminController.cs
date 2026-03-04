@@ -1,5 +1,7 @@
+using Creaturedex.AI;
 using Creaturedex.AI.Services;
 using Creaturedex.Api.Services;
+using Creaturedex.Core.Entities;
 using Creaturedex.Data.Repositories;
 using Creaturedex.Shared.Requests;
 using Microsoft.AspNetCore.Authorization;
@@ -14,7 +16,8 @@ public class AdminController(
     ContentGenerationService contentGenService,
     ContentGeneratorService contentGenerator,
     ImageGenerationService imageService,
-    AnimalRepository animalRepo) : ControllerBase
+    AnimalRepository animalRepo,
+    TagRepository tagRepo) : ControllerBase
 {
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus()
@@ -136,6 +139,66 @@ public class AdminController(
 
         await animalRepo.UpdateImageUrlAsync(id, imageUrl);
         return Ok(new { imageUrl, animalName = animal.CommonName });
+    }
+    [HttpPut("animals/{id:guid}")]
+    public async Task<IActionResult> UpdateAnimal(Guid id, [FromBody] UpdateAnimalRequest request)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null) return NotFound();
+
+        animal.CommonName = request.CommonName;
+        animal.ScientificName = request.ScientificName;
+        animal.Summary = request.Summary;
+        animal.Description = request.Description;
+        animal.CategoryId = request.CategoryId;
+        animal.IsPet = request.IsPet;
+        animal.ConservationStatus = request.ConservationStatus;
+        animal.NativeRegion = request.NativeRegion;
+        animal.Habitat = request.Habitat;
+        animal.Diet = request.Diet;
+        animal.Lifespan = request.Lifespan;
+        animal.SizeInfo = request.SizeInfo;
+        animal.Behaviour = request.Behaviour;
+        animal.FunFacts = request.FunFacts;
+        animal.ReviewedBy = User.Identity?.Name;
+
+        await animalRepo.UpdateAsync(animal);
+
+        // Update tags
+        await tagRepo.DeleteByAnimalIdAsync(animal.Id);
+        if (request.Tags.Count > 0)
+        {
+            var tags = request.Tags.Select(t => new AnimalTag { AnimalId = animal.Id, Tag = t }).ToList();
+            await tagRepo.BulkInsertAsync(tags);
+        }
+
+        return Ok(new { message = "Updated", id = animal.Id });
+    }
+
+    [HttpPost("animals/{id:guid}/image/upload")]
+    public async Task<IActionResult> UploadImage(Guid id, IFormFile file, [FromServices] AIConfig aiCfg)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null) return NotFound();
+
+        if (file.Length == 0) return BadRequest(new { error = "No file provided" });
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+            return BadRequest(new { error = "Only PNG, JPG, and WebP images are allowed" });
+
+        var fileName = $"{animal.Slug}{ext}";
+        var storagePath = Path.Combine(AppContext.BaseDirectory, aiCfg.ImageStoragePath);
+        Directory.CreateDirectory(storagePath);
+        var filePath = Path.Combine(storagePath, fileName);
+
+        await using var stream = new FileStream(filePath, FileMode.Create);
+        await file.CopyToAsync(stream);
+
+        var imageUrl = $"/images/animals/{fileName}";
+        await animalRepo.UpdateImageUrlAsync(id, imageUrl);
+
+        return Ok(new { imageUrl });
     }
 }
 

@@ -18,7 +18,8 @@ public class AnimalsController(AnimalService animalService) : ControllerBase
     [HttpGet("{slug}")]
     public async Task<IActionResult> GetBySlug(string slug)
     {
-        var animal = await animalService.GetBySlugAsync(slug);
+        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+        var animal = await animalService.GetBySlugAsync(slug, includeUnpublished: isAuthenticated);
         if (animal == null) return NotFound();
         return Ok(animal);
     }
