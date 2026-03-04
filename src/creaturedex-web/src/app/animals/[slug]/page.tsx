@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Badge from "@/components/ui/Badge";
 import Tabs from "@/components/ui/Tabs";
@@ -9,13 +9,27 @@ import TaxonomyTree from "@/components/animals/TaxonomyTree";
 import CareSection from "@/components/animals/CareSection";
 import ConservationBadge from "@/components/animals/ConservationBadge";
 import DifficultyRating from "@/components/animals/DifficultyRating";
-import type { AnimalProfile } from "@/lib/types";
+import EditToolbar from "@/components/admin/EditToolbar";
+import ReviewPanel from "@/components/admin/ReviewPanel";
+import type { AnimalProfile, ReviewSuggestion } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export default function AnimalProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [profile, setProfile] = useState<AnimalProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const { isLoggedIn } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState<Record<string, string | boolean | null>>({});
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [reviewSuggestions, setReviewSuggestions] = useState<ReviewSuggestion[] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -32,6 +46,183 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     };
     fetchProfile();
   }, [slug]);
+
+  const handleEdit = () => {
+    if (!profile) return;
+    const { animal } = profile;
+    setEditData({
+      commonName: animal.commonName,
+      scientificName: animal.scientificName,
+      summary: animal.summary,
+      description: animal.description,
+      categoryId: animal.categoryId,
+      isPet: animal.isPet,
+      conservationStatus: animal.conservationStatus,
+      nativeRegion: animal.nativeRegion,
+      habitat: animal.habitat,
+      diet: animal.diet,
+      lifespan: animal.lifespan,
+      sizeInfo: animal.sizeInfo,
+      behaviour: animal.behaviour,
+      funFacts: animal.funFacts,
+    });
+    setEditTags([...profile.tags]);
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditData({});
+    setEditTags([]);
+  };
+
+  const handleSave = async () => {
+    if (!profile) return;
+    setIsSaving(true);
+    try {
+      await api.admin.updateAnimal(profile.animal.id, {
+        commonName: (editData.commonName as string) || "",
+        scientificName: (editData.scientificName as string) || null,
+        summary: (editData.summary as string) || "",
+        description: (editData.description as string) || "",
+        categoryId: (editData.categoryId as string) || profile.animal.categoryId,
+        isPet: editData.isPet as boolean,
+        conservationStatus: (editData.conservationStatus as string) || null,
+        nativeRegion: (editData.nativeRegion as string) || null,
+        habitat: (editData.habitat as string) || null,
+        diet: (editData.diet as string) || null,
+        lifespan: (editData.lifespan as string) || null,
+        sizeInfo: (editData.sizeInfo as string) || null,
+        behaviour: (editData.behaviour as string) || null,
+        funFacts: (editData.funFacts as string) || null,
+        tags: editTags,
+      });
+      // Refresh the profile
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+      setIsEditing(false);
+    } catch (err) {
+      console.error("Failed to save:", err);
+      alert("Failed to save changes");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!profile) return;
+    setIsGeneratingImage(true);
+    try {
+      await api.admin.generateImage(profile.animal.id);
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+    } catch (err) {
+      console.error("Failed to generate image:", err);
+      alert("Failed to generate image");
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
+  const handleUploadImage = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    setIsGeneratingImage(true);
+    try {
+      await api.admin.uploadImage(profile.animal.id, file);
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+    } catch (err) {
+      console.error("Failed to upload image:", err);
+      alert("Failed to upload image");
+    } finally {
+      setIsGeneratingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleReview = async () => {
+    if (!profile) return;
+    setIsReviewing(true);
+    try {
+      const result = await api.admin.reviewAnimal(profile.animal.id);
+      setReviewSuggestions(result.suggestions);
+    } catch (err) {
+      console.error("Failed to review:", err);
+      alert("Failed to get AI review");
+    } finally {
+      setIsReviewing(false);
+    }
+  };
+
+  const handleAcceptSuggestion = (suggestion: ReviewSuggestion) => {
+    if (!isEditing) handleEdit();
+    setEditData(prev => ({ ...prev, [suggestion.field]: suggestion.suggestedValue }));
+    // Remove accepted suggestion from list
+    setReviewSuggestions(prev =>
+      prev ? prev.filter(s => s !== suggestion) : null
+    );
+  };
+
+  const handleDismissSuggestion = (index: number) => {
+    setReviewSuggestions(prev =>
+      prev ? prev.filter((_, i) => i !== index) : null
+    );
+  };
+
+  const handleTogglePublish = async () => {
+    if (!profile) return;
+    try {
+      if (profile.animal.isPublished) {
+        await api.admin.unpublishAnimal(profile.animal.id);
+      } else {
+        await api.admin.publishAnimal(profile.animal.id);
+      }
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+    } catch (err) {
+      console.error("Failed to toggle publish:", err);
+    }
+  };
+
+  const handleAddTag = () => {
+    const tag = newTag.trim().toLowerCase();
+    if (tag && !editTags.includes(tag)) {
+      setEditTags(prev => [...prev, tag]);
+      setNewTag("");
+    }
+  };
+
+  const handleRemoveTag = (tag: string) => {
+    setEditTags(prev => prev.filter(t => t !== tag));
+  };
+
+  const renderEditableText = (field: string, currentValue: string | null, multiline = false) => {
+    if (!isEditing) {
+      return <p className="text-text leading-relaxed whitespace-pre-line">{currentValue || ""}</p>;
+    }
+    if (multiline) {
+      return (
+        <textarea
+          value={(editData[field] as string) ?? currentValue ?? ""}
+          onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm min-h-[120px] focus:ring-primary focus:border-primary"
+        />
+      );
+    }
+    return (
+      <input
+        type="text"
+        value={(editData[field] as string) ?? currentValue ?? ""}
+        onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-primary focus:border-primary"
+      />
+    );
+  };
 
   if (loading) {
     return (
@@ -74,7 +265,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
       label: "Overview",
       content: (
         <div className="prose max-w-none">
-          <p className="text-text leading-relaxed whitespace-pre-line">{animal.description}</p>
+          {renderEditableText("description", animal.description, true)}
         </div>
       ),
     },
@@ -87,21 +278,21 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           },
         ]
       : []),
-    ...(animal.habitat
+    ...(animal.habitat || isEditing
       ? [
           {
             id: "habitat",
             label: "Habitat",
-            content: <p className="text-text leading-relaxed whitespace-pre-line">{animal.habitat}</p>,
+            content: renderEditableText("habitat", animal.habitat, true),
           },
         ]
       : []),
-    ...(animal.behaviour
+    ...(animal.behaviour || isEditing
       ? [
           {
             id: "behaviour",
             label: "Behaviour",
-            content: <p className="text-text leading-relaxed whitespace-pre-line">{animal.behaviour}</p>,
+            content: renderEditableText("behaviour", animal.behaviour, true),
           },
         ]
       : []),
@@ -136,6 +327,50 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Hidden file input for image upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept=".png,.jpg,.jpeg,.webp"
+        className="hidden"
+      />
+
+      {/* Admin toolbar */}
+      {isLoggedIn && (
+        <EditToolbar
+          isEditing={isEditing}
+          isPublished={animal.isPublished}
+          isSaving={isSaving}
+          isGeneratingImage={isGeneratingImage}
+          isReviewing={isReviewing}
+          onToggleEdit={handleEdit}
+          onSave={handleSave}
+          onCancel={handleCancel}
+          onGenerateImage={handleGenerateImage}
+          onUploadImage={handleUploadImage}
+          onReview={handleReview}
+          onTogglePublish={handleTogglePublish}
+        />
+      )}
+
+      {/* AI Review Panel */}
+      {reviewSuggestions !== null && (
+        <ReviewPanel
+          suggestions={reviewSuggestions}
+          onAccept={handleAcceptSuggestion}
+          onDismiss={handleDismissSuggestion}
+          onClose={() => setReviewSuggestions(null)}
+        />
+      )}
+
+      {/* Draft badge */}
+      {isLoggedIn && !animal.isPublished && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6 text-sm text-amber-800 font-medium">
+          Draft — this animal is not published yet
+        </div>
+      )}
+
       {/* Disclaimer for unreviewed content */}
       {!isReviewed && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-sm text-yellow-800">
@@ -157,9 +392,26 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
         <div className="flex-1">
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-text">{animal.commonName}</h1>
-            {animal.scientificName && (
-              <p className="text-lg text-text-muted italic mt-1">{animal.scientificName}</p>
+            {isEditing ? (
+              <input
+                type="text"
+                value={(editData.commonName as string) ?? animal.commonName}
+                onChange={(e) => setEditData(prev => ({ ...prev, commonName: e.target.value }))}
+                className="text-3xl font-bold text-text w-full border-b border-gray-300 focus:border-primary focus:outline-none"
+              />
+            ) : (
+              <h1 className="text-3xl font-bold text-text">{animal.commonName}</h1>
+            )}
+            {isEditing ? (
+              <input
+                type="text"
+                value={(editData.scientificName as string) ?? animal.scientificName ?? ""}
+                onChange={(e) => setEditData(prev => ({ ...prev, scientificName: e.target.value }))}
+                placeholder="Scientific name"
+                className="text-lg text-text-muted italic mt-1 w-full border-b border-gray-300 focus:border-primary focus:outline-none"
+              />
+            ) : (
+              animal.scientificName && <p className="text-lg text-text-muted italic mt-1">{animal.scientificName}</p>
             )}
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <Badge variant="primary">{categoryName}</Badge>
@@ -171,12 +423,34 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                 <DifficultyRating rating={careGuide.difficultyRating} />
               )}
             </div>
-            {tags.length > 0 && (
-              <div className="flex gap-1.5 mt-3 flex-wrap">
-                {tags.map((tag) => (
-                  <Badge key={tag}>{tag}</Badge>
+            {isEditing ? (
+              <div className="flex gap-1.5 mt-3 flex-wrap items-center">
+                {editTags.map((tag) => (
+                  <span key={tag} className="inline-flex items-center gap-1 bg-gray-100 text-text-muted text-xs px-2 py-1 rounded-full">
+                    {tag}
+                    <button onClick={() => handleRemoveTag(tag)} className="text-gray-400 hover:text-red-500">&times;</button>
+                  </span>
                 ))}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
+                    placeholder="Add tag..."
+                    className="text-xs border border-gray-300 rounded px-2 py-1 w-24 focus:ring-primary focus:border-primary"
+                  />
+                  <button onClick={handleAddTag} className="text-xs text-primary hover:underline">Add</button>
+                </div>
               </div>
+            ) : (
+              tags.length > 0 && (
+                <div className="flex gap-1.5 mt-3 flex-wrap">
+                  {tags.map((tag) => (
+                    <Badge key={tag}>{tag}</Badge>
+                  ))}
+                </div>
+              )
             )}
           </div>
 
@@ -196,7 +470,15 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           )}
 
           {/* Summary */}
-          <p className="text-lg text-text leading-relaxed mb-8">{animal.summary}</p>
+          {isEditing ? (
+            <textarea
+              value={(editData.summary as string) ?? animal.summary}
+              onChange={(e) => setEditData(prev => ({ ...prev, summary: e.target.value }))}
+              className="w-full text-lg text-text leading-relaxed rounded-lg border border-gray-300 px-3 py-2 min-h-[80px] focus:ring-primary focus:border-primary"
+            />
+          ) : (
+            <p className="text-lg text-text leading-relaxed mb-8">{animal.summary}</p>
+          )}
 
           {/* Tabbed content */}
           <Tabs tabs={contentTabs} />
