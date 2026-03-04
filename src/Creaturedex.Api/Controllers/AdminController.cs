@@ -4,6 +4,7 @@ using Creaturedex.Api.Services;
 using Creaturedex.Core.Entities;
 using Creaturedex.Data.Repositories;
 using Creaturedex.Shared.Requests;
+using Creaturedex.Shared.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -199,6 +200,18 @@ public class AdminController(
         await animalRepo.UpdateImageUrlAsync(id, imageUrl);
 
         return Ok(new { imageUrl });
+    }
+
+    [HttpPost("animals/{id:guid}/review")]
+    public async Task<IActionResult> ReviewAnimal(Guid id, [FromServices] ContentReviewService reviewService, CancellationToken ct)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null) return NotFound();
+
+        var tags = (await tagRepo.GetByAnimalIdAsync(id)).Select(t => t.Tag).ToList();
+        var suggestions = await reviewService.ReviewAnimalAsync(animal, tags, ct);
+
+        return Ok(new { suggestions });
     }
 }
 

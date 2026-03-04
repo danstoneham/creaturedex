@@ -45,6 +45,7 @@ builder.Services.AddHttpClient<ImageGenerationService>(client =>
 builder.Services.AddScoped<AIService>();
 builder.Services.AddScoped<EmbeddingService>();
 builder.Services.AddScoped<ContentGeneratorService>();
+builder.Services.AddScoped<ContentReviewService>();
 builder.Services.AddScoped<SemanticSearchService>();
 builder.Services.AddScoped<MatcherAIService>();
 
