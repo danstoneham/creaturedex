@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import AnimalGrid from "@/components/animals/AnimalGrid";
 import type { AnimalCard } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import AddAnimalModal from "@/components/admin/AddAnimalModal";
 
 const categories = [
   { name: "All", slug: "" },
@@ -21,6 +23,8 @@ const categories = [
 ];
 
 export default function BrowsePage() {
+  const { isLoggedIn } = useAuth();
+  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [petsOnly, setPetsOnly] = useState(false);
   const [sortBy, setSortBy] = useState("name");
@@ -50,7 +54,17 @@ export default function BrowsePage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <h1 className="text-3xl font-bold text-text mb-6">Browse Animals</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-text">Browse Animals</h1>
+        {isLoggedIn && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90"
+          >
+            + Add Animal
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Filter sidebar */}
@@ -109,6 +123,8 @@ export default function BrowsePage() {
           <AnimalGrid animals={animals} loading={loading} />
         </div>
       </div>
+
+      <AddAnimalModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} />
     </div>
   );
 }
