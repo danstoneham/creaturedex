@@ -129,3 +129,29 @@ export interface AuthUser {
   displayName: string;
   role: string;
 }
+
+export interface UpdateAnimalRequest {
+  commonName: string;
+  scientificName: string | null;
+  summary: string;
+  description: string;
+  categoryId: string;
+  isPet: boolean;
+  conservationStatus: string | null;
+  nativeRegion: string | null;
+  habitat: string | null;
+  diet: string | null;
+  lifespan: string | null;
+  sizeInfo: string | null;
+  behaviour: string | null;
+  funFacts: string | null;
+  tags: string[];
+}
+
+export interface ReviewSuggestion {
+  field: string;
+  severity: "info" | "warning";
+  message: string;
+  currentValue: string;
+  suggestedValue: string;
+}

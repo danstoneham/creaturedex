@@ -6,6 +6,8 @@ import type {
   SearchResult,
   MatcherRequest,
   MatcherResult,
+  UpdateAnimalRequest,
+  ReviewSuggestion,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -64,5 +66,45 @@ export const api = {
         method: "POST",
       }),
     me: () => fetchApi<AuthUser>("/api/auth/me"),
+  },
+  admin: {
+    updateAnimal: (id: string, data: UpdateAnimalRequest) =>
+      fetchApi<{ message: string; id: string }>(`/api/admin/animals/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    uploadImage: async (id: string, file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/api/admin/animals/${id}/image/upload`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      return res.json() as Promise<{ imageUrl: string }>;
+    },
+    generateImage: (id: string) =>
+      fetchApi<{ imageUrl: string; animalName: string }>(`/api/admin/image/generate/${id}`, {
+        method: "POST",
+      }),
+    generateAnimal: (animalName: string) =>
+      fetchApi<{ id: string; message: string }>("/api/admin/generate", {
+        method: "POST",
+        body: JSON.stringify({ animalName, skipImage: true }),
+      }),
+    reviewAnimal: (id: string) =>
+      fetchApi<{ suggestions: ReviewSuggestion[] }>(`/api/admin/animals/${id}/review`, {
+        method: "POST",
+      }),
+    publishAnimal: (id: string) =>
+      fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
+        method: "PUT",
+      }),
+    unpublishAnimal: (id: string) =>
+      fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isPublished: false }),
+      }),
   },
 };
