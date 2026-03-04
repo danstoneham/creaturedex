@@ -55,6 +55,38 @@ builder.Services.AddScoped<SearchService>();
 builder.Services.AddScoped<MatcherService>();
 builder.Services.AddScoped<ContentGenerationService>();
 
+// Authentication
+builder.Services.AddScoped<UserRepository>();
+builder.Services.AddScoped<AuthService>();
+
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        var jwtKey = builder.Configuration["Jwt:Key"]
+            ?? throw new InvalidOperationException("Jwt:Key not configured");
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "Creaturedex",
+            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "Creaturedex",
+            IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(jwtKey))
+        };
+        // Read JWT from cookie instead of Authorization header
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                context.Token = context.Request.Cookies["creaturedex_token"];
+                return Task.CompletedTask;
+            }
+        };
+    });
+builder.Services.AddAuthorization();
+
 // CORS
 builder.Services.AddCors(options =>
 {
@@ -93,6 +125,8 @@ Directory.CreateDirectory(imageStoragePath);
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(

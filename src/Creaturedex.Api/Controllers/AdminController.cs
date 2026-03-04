@@ -2,11 +2,13 @@ using Creaturedex.AI.Services;
 using Creaturedex.Api.Services;
 using Creaturedex.Data.Repositories;
 using Creaturedex.Shared.Requests;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Creaturedex.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/admin")]
 public class AdminController(
     ContentGenerationService contentGenService,
