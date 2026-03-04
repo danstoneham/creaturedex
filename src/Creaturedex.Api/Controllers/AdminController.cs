@@ -30,7 +30,7 @@ public class AdminController(
     [HttpPost("generate")]
     public async Task<IActionResult> Generate([FromBody] GenerateAnimalRequest request, CancellationToken ct)
     {
-        var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, ct);
+        var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
         if (id == null)
             return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
         return Ok(new { id, message = $"Generated {request.AnimalName}" });

@@ -80,7 +80,7 @@ public class ContentGeneratorService(
         Include petCareGuide ONLY if isPet is true. Respond with ONLY the JSON, no markdown fences or extra text.
         """;
 
-    public async Task<Guid?> GenerateAnimalAsync(string animalName, CancellationToken ct = default)
+    public async Task<Guid?> GenerateAnimalAsync(string animalName, bool skipImage = false, CancellationToken ct = default)
     {
         try
         {
@@ -203,7 +203,7 @@ public class ContentGeneratorService(
             await embeddingService.GenerateAndStoreAsync(animalId, embeddingText, aiConfig.EmbeddingModel);
 
             // Generate image via Stable Diffusion (only if enabled)
-            if (aiConfig.AutoGenerateImages)
+            if (!skipImage && aiConfig.AutoGenerateImages)
             {
                 var imageUrl = await imageService.GenerateAnimalImageAsync(
                     animal.CommonName, animal.Slug, animal.ScientificName,
@@ -235,7 +235,7 @@ public class ContentGeneratorService(
 
             try
             {
-                var id = await GenerateAnimalAsync(name, ct);
+                var id = await GenerateAnimalAsync(name, false, ct);
                 results.Add((name, id, id.HasValue ? null : "Generation returned null"));
             }
             catch (Exception ex)
