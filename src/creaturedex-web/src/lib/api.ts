@@ -1,6 +1,7 @@
 import type {
   AnimalCard,
   AnimalProfile,
+  AuthUser,
   CategoryDto,
   SearchResult,
   MatcherRequest,
@@ -11,6 +12,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -51,4 +53,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(request),
     }),
+  auth: {
+    login: (username: string, password: string) =>
+      fetchApi<AuthUser>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      }),
+    logout: () =>
+      fetchApi<{ message: string }>("/api/auth/logout", {
+        method: "POST",
+      }),
+    me: () => fetchApi<AuthUser>("/api/auth/me"),
+  },
 };

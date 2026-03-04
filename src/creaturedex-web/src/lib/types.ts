@@ -122,3 +122,10 @@ export interface MatcherRecommendation {
   explanation: string;
   matchScore: number;
 }
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+}

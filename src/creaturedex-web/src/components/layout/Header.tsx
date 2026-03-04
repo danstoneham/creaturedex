@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import Navigation from "./Navigation";
 import MobileNav from "./MobileNav";
+import { useAuth } from "@/lib/auth";
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, isLoggedIn, logout } = useAuth();
 
   return (
     <header className="bg-surface border-b border-gray-200 sticky top-0 z-50">
@@ -29,6 +31,25 @@ export default function Header() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </Link>
+
+            {isLoggedIn ? (
+              <div className="hidden md:flex items-center gap-3">
+                <span className="text-sm text-text-muted">{user?.displayName}</span>
+                <button
+                  onClick={logout}
+                  className="text-sm text-text-muted hover:text-primary transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="hidden md:block text-sm text-text-muted hover:text-primary transition-colors"
+              >
+                Login
+              </Link>
+            )}
 
             <button
               className="md:hidden text-text-muted hover:text-primary"
