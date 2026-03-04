@@ -160,9 +160,31 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
   };
 
   const handleAcceptSuggestion = (suggestion: ReviewSuggestion) => {
-    if (!isEditing) handleEdit();
-    setEditData(prev => ({ ...prev, [suggestion.field]: suggestion.suggestedValue }));
-    // Remove accepted suggestion from list
+    if (!isEditing && profile) {
+      const { animal } = profile;
+      const initialData: Record<string, string | boolean | null> = {
+        commonName: animal.commonName,
+        scientificName: animal.scientificName,
+        summary: animal.summary,
+        description: animal.description,
+        categoryId: animal.categoryId,
+        isPet: animal.isPet,
+        conservationStatus: animal.conservationStatus,
+        nativeRegion: animal.nativeRegion,
+        habitat: animal.habitat,
+        diet: animal.diet,
+        lifespan: animal.lifespan,
+        sizeInfo: animal.sizeInfo,
+        behaviour: animal.behaviour,
+        funFacts: animal.funFacts,
+      };
+      initialData[suggestion.field] = suggestion.suggestedValue;
+      setEditData(initialData);
+      setEditTags([...profile.tags]);
+      setIsEditing(true);
+    } else {
+      setEditData(prev => ({ ...prev, [suggestion.field]: suggestion.suggestedValue }));
+    }
     setReviewSuggestions(prev =>
       prev ? prev.filter(s => s !== suggestion) : null
     );

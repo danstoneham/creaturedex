@@ -142,6 +142,14 @@ public class AnimalRepository(DbConnectionFactory db)
             new { Id = id });
     }
 
+    public async Task UnpublishAsync(Guid id)
+    {
+        using var conn = db.CreateConnection();
+        await conn.ExecuteAsync(
+            "UPDATE Animals SET IsPublished = 0, UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id",
+            new { Id = id });
+    }
+
     public async Task PublishAllAsync()
     {
         using var conn = db.CreateConnection();

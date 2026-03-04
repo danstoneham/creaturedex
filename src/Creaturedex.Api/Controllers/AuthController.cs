@@ -1,14 +1,16 @@
 using Creaturedex.Api.Services;
 using Creaturedex.Data.Repositories;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using System.Security.Claims;
 
 namespace Creaturedex.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService authService, UserRepository userRepo) : ControllerBase
+public class AuthController(AuthService authService, UserRepository userRepo, IWebHostEnvironment env) : ControllerBase
 {
     public record LoginRequest(string Username, string Password);
     public record SetupRequest(string Username, string Password, string DisplayName);
@@ -23,7 +25,7 @@ public class AuthController(AuthService authService, UserRepository userRepo) : 
         Response.Cookies.Append("creaturedex_token", token, new CookieOptions
         {
             HttpOnly = true,
-            Secure = false, // Set true in production with HTTPS
+            Secure = !env.IsDevelopment(),
             SameSite = SameSiteMode.Lax,
             MaxAge = TimeSpan.FromDays(7),
             Path = "/"

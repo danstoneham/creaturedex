@@ -89,7 +89,7 @@ export const api = {
         method: "POST",
       }),
     generateAnimal: (animalName: string) =>
-      fetchApi<{ id: string; message: string }>("/api/admin/generate", {
+      fetchApi<{ id: string; slug: string; message: string }>("/api/admin/generate", {
         method: "POST",
         body: JSON.stringify({ animalName, skipImage: true }),
       }),
@@ -102,9 +102,8 @@ export const api = {
         method: "PUT",
       }),
     unpublishAnimal: (id: string) =>
-      fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
+      fetchApi<{ message: string }>(`/api/admin/unpublish/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ isPublished: false }),
       }),
   },
 };

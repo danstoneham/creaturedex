@@ -24,9 +24,8 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
     setError("");
     setLoading(true);
     try {
-      await api.admin.generateAnimal(animalName.trim());
-      const slug = animalName.trim().toLowerCase().replace(/\s+/g, "-");
-      router.push(`/animals/${slug}`);
+      const result = await api.admin.generateAnimal(animalName.trim());
+      router.push(`/animals/${result.slug}`);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate animal");

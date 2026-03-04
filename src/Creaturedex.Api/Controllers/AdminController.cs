@@ -33,7 +33,8 @@ public class AdminController(
         var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
         if (id == null)
             return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
-        return Ok(new { id, message = $"Generated {request.AnimalName}" });
+        var animal = await animalRepo.GetByIdAsync(id.Value);
+        return Ok(new { id, slug = animal?.Slug, message = $"Generated {request.AnimalName}" });
     }
 
     [HttpPost("generate/batch")]
@@ -63,6 +64,13 @@ public class AdminController(
     {
         await animalRepo.PublishAsync(id);
         return Ok(new { message = "Published" });
+    }
+
+    [HttpPut("unpublish/{id:guid}")]
+    public async Task<IActionResult> Unpublish(Guid id)
+    {
+        await animalRepo.UnpublishAsync(id);
+        return Ok(new { message = "Unpublished" });
     }
 
     [HttpPut("publish/all")]
@@ -176,6 +184,7 @@ public class AdminController(
         return Ok(new { message = "Updated", id = animal.Id });
     }
 
+    [RequestSizeLimit(10_485_760)]
     [HttpPost("animals/{id:guid}/image/upload")]
     public async Task<IActionResult> UploadImage(Guid id, IFormFile file, [FromServices] AIConfig aiCfg)
     {
@@ -183,6 +192,9 @@ public class AdminController(
         if (animal == null) return NotFound();
 
         if (file.Length == 0) return BadRequest(new { error = "No file provided" });
+
+        if (file.Length > 10 * 1024 * 1024)
+            return BadRequest(new { error = "File exceeds maximum size of 10 MB" });
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
