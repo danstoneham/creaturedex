@@ -1,16 +1,13 @@
 using Creaturedex.Api.Services;
-using Creaturedex.Data.Repositories;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Hosting;
 using System.Security.Claims;
 
 namespace Creaturedex.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService authService, UserRepository userRepo, IWebHostEnvironment env) : ControllerBase
+public class AuthController(AuthService authService, IWebHostEnvironment env) : ControllerBase
 {
     public record LoginRequest(string Username, string Password);
     public record SetupRequest(string Username, string Password, string DisplayName);
@@ -22,14 +19,7 @@ public class AuthController(AuthService authService, UserRepository userRepo, IW
         if (user == null || token == null)
             return Unauthorized(new { error = "Invalid username or password" });
 
-        Response.Cookies.Append("creaturedex_token", token, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = !env.IsDevelopment(),
-            SameSite = SameSiteMode.Lax,
-            MaxAge = TimeSpan.FromDays(7),
-            Path = "/"
-        });
+        Response.Cookies.Append("creaturedex_token", token, authService.GetAuthCookieOptions(env.IsDevelopment()));
 
         return Ok(new { id = user.Id, username = user.Username, displayName = user.DisplayName, role = user.Role });
     }
@@ -55,18 +45,13 @@ public class AuthController(AuthService authService, UserRepository userRepo, IW
         return Ok(new { id = user.Id, username = user.Username, displayName = user.DisplayName, role = user.Role });
     }
 
-    /// <summary>
-    /// One-time setup endpoint to create initial admin accounts.
-    /// Only works when no users exist in the database.
-    /// </summary>
     [HttpPost("setup")]
     public async Task<IActionResult> Setup([FromBody] SetupRequest request)
     {
-        var count = await userRepo.CountAsync();
-        if (count > 0)
+        var id = await authService.SetupAsync(request.Username, request.Password, request.DisplayName);
+        if (id == null)
             return BadRequest(new { error = "Setup already completed. Users already exist." });
 
-        var id = await authService.CreateUserAsync(request.Username, request.Password, request.DisplayName);
         return Ok(new { id, message = $"Admin account '{request.Username}' created" });
     }
 

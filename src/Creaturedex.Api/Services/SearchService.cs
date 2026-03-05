@@ -6,7 +6,8 @@ namespace Creaturedex.Api.Services;
 public class SearchService(
     SearchRepository searchRepo,
     CategoryRepository categoryRepo,
-    PetCareGuideRepository careRepo)
+    PetCareGuideRepository careRepo,
+    TagRepository tagRepo)
 {
     public async Task<List<SearchResultDto>> SearchAsync(string query, string type = "text")
     {
@@ -47,4 +48,7 @@ public class SearchService(
 
         return dtos;
     }
+
+    public async Task<IEnumerable<(string Tag, int Count)>> GetAllUniqueTagsAsync() =>
+        await tagRepo.GetAllUniqueAsync();
 }

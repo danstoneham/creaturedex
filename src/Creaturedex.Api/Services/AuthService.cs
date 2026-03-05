@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Creaturedex.Core.Entities;
 using Creaturedex.Data.Repositories;
+using Microsoft.AspNetCore.Http;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Creaturedex.Api.Services;
@@ -35,6 +36,23 @@ public class AuthService(UserRepository userRepo, IConfiguration config)
         };
         return await userRepo.CreateAsync(user);
     }
+
+    public async Task<Guid?> SetupAsync(string username, string password, string displayName)
+    {
+        var count = await userRepo.CountAsync();
+        if (count > 0) return null;
+
+        return await CreateUserAsync(username, password, displayName);
+    }
+
+    public CookieOptions GetAuthCookieOptions(bool isDevelopment) => new()
+    {
+        HttpOnly = true,
+        Secure = !isDevelopment,
+        SameSite = SameSiteMode.Lax,
+        MaxAge = TimeSpan.FromDays(7),
+        Path = "/"
+    };
 
     private string GenerateToken(User user)
     {

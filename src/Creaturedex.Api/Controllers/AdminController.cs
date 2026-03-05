@@ -1,10 +1,6 @@
-using Creaturedex.AI;
 using Creaturedex.AI.Services;
 using Creaturedex.Api.Services;
-using Creaturedex.Core.Entities;
-using Creaturedex.Data.Repositories;
 using Creaturedex.Shared.Requests;
-using Creaturedex.Shared.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,9 +12,7 @@ namespace Creaturedex.Api.Controllers;
 public class AdminController(
     ContentGenerationService contentGenService,
     ContentGeneratorService contentGenerator,
-    ImageGenerationService imageService,
-    AnimalRepository animalRepo,
-    TagRepository tagRepo) : ControllerBase
+    AnimalService animalService) : ControllerBase
 {
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus()
@@ -35,7 +29,7 @@ public class AdminController(
             var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
             if (id == null)
                 return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
-            var animal = await animalRepo.GetByIdAsync(id.Value);
+            var animal = await animalService.GetByIdAsync(id.Value);
             return Ok(new { id, slug = animal?.Slug, message = $"Generated {request.AnimalName}" });
         }
         catch (DuplicateAnimalException ex)
@@ -73,43 +67,40 @@ public class AdminController(
     [HttpGet("review")]
     public async Task<IActionResult> GetUnreviewed()
     {
-        var animals = await animalRepo.GetUnreviewedAsync();
+        var animals = await animalService.GetUnreviewedAsync();
         return Ok(animals);
     }
 
     [HttpPut("review/{id:guid}")]
     public async Task<IActionResult> MarkReviewed(Guid id)
     {
-        await animalRepo.MarkReviewedAsync(id);
+        await animalService.MarkReviewedAsync(id);
         return Ok(new { message = "Marked as reviewed" });
     }
 
     [HttpPut("publish/{id:guid}")]
     public async Task<IActionResult> Publish(Guid id)
     {
-        await animalRepo.PublishAsync(id);
+        await animalService.PublishAsync(id);
         return Ok(new { message = "Published" });
     }
 
     [HttpPut("unpublish/{id:guid}")]
     public async Task<IActionResult> Unpublish(Guid id)
     {
-        await animalRepo.UnpublishAsync(id);
+        await animalService.UnpublishAsync(id);
         return Ok(new { message = "Unpublished" });
     }
 
     [HttpPut("publish/all")]
     public async Task<IActionResult> PublishAll()
     {
-        await animalRepo.PublishAllAsync();
+        await animalService.PublishAllAsync();
         return Ok(new { message = "All animals published" });
     }
 
-    /// <summary>
-    /// Test image generation with a custom prompt. Returns the generated image URL, the prompt used, and the seed.
-    /// </summary>
     [HttpPost("image/test")]
-    public async Task<IActionResult> TestImageGeneration([FromBody] TestImageRequest request, CancellationToken ct)
+    public async Task<IActionResult> TestImageGeneration([FromBody] TestImageRequest request, [FromServices] ImageGenerationService imageService, CancellationToken ct)
     {
         try
         {
@@ -126,9 +117,6 @@ public class AdminController(
         }
     }
 
-    /// <summary>
-    /// Preview the full positive and negative prompts that would be generated for an animal.
-    /// </summary>
     [HttpGet("image/preview-prompt")]
     public IActionResult PreviewPrompt([FromQuery] string animalName, [FromQuery] string? summary = null,
         [FromQuery] string? description = null, [FromQuery] string? habitat = null, [FromQuery] string? sizeInfo = null)
@@ -138,84 +126,41 @@ public class AdminController(
         return Ok(new { prompt, negativePrompt });
     }
 
-    /// <summary>
-    /// Preview the prompt that would be used for an existing animal by ID.
-    /// </summary>
     [HttpGet("image/preview-prompt/{id:guid}")]
     public async Task<IActionResult> PreviewPromptForAnimal(Guid id)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
+        var animal = await animalService.GetByIdAsync(id);
         if (animal == null)
             return NotFound(new { error = "Animal not found" });
 
-        var prompt = ImageGenerationService.BuildPrompt(
-            animal.CommonName, animal.ScientificName, animal.Summary,
-            animal.Description, animal.Habitat, animal.SizeInfo);
-        var negativePrompt = ImageGenerationService.GetNegativePrompt();
-        return Ok(new { animalName = animal.CommonName, prompt, negativePrompt });
+        var result = animalService.PreviewPromptForAnimal(animal);
+        return Ok(new { animalName = animal.CommonName, prompt = result!.Value.Prompt, negativePrompt = result.Value.NegativePrompt });
     }
 
-    /// <summary>
-    /// Generate (or regenerate) an image for an existing animal by ID.
-    /// </summary>
     [HttpPost("image/generate/{id:guid}")]
     public async Task<IActionResult> GenerateImageForAnimal(Guid id, CancellationToken ct)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
-        if (animal == null)
+        var (imageUrl, animalName) = await animalService.GenerateImageAsync(id, ct);
+        if (animalName == null)
             return NotFound(new { error = "Animal not found" });
-
-        var imageUrl = await imageService.GenerateAnimalImageAsync(
-            animal.CommonName, animal.Slug, animal.ScientificName,
-            animal.Summary, animal.Description, animal.Habitat, animal.SizeInfo, ct);
         if (imageUrl == null)
-            return StatusCode(500, new { error = $"Image generation failed for {animal.CommonName}" });
+            return StatusCode(500, new { error = $"Image generation failed for {animalName}" });
 
-        await animalRepo.UpdateImageUrlAsync(id, imageUrl);
-        return Ok(new { imageUrl, animalName = animal.CommonName });
+        return Ok(new { imageUrl, animalName });
     }
+
     [HttpPut("animals/{id:guid}")]
     public async Task<IActionResult> UpdateAnimal(Guid id, [FromBody] UpdateAnimalRequest request)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
+        var animal = await animalService.UpdateAnimalAsync(id, request, User.Identity?.Name);
         if (animal == null) return NotFound();
-
-        animal.CommonName = request.CommonName;
-        animal.ScientificName = request.ScientificName;
-        animal.Summary = request.Summary;
-        animal.Description = request.Description;
-        animal.CategoryId = request.CategoryId;
-        animal.IsPet = request.IsPet;
-        animal.ConservationStatus = request.ConservationStatus;
-        animal.NativeRegion = request.NativeRegion;
-        animal.Habitat = request.Habitat;
-        animal.Diet = request.Diet;
-        animal.Lifespan = request.Lifespan;
-        animal.SizeInfo = request.SizeInfo;
-        animal.Behaviour = request.Behaviour;
-        animal.FunFacts = request.FunFacts;
-        animal.ReviewedBy = User.Identity?.Name;
-
-        await animalRepo.UpdateAsync(animal);
-
-        // Update tags
-        await tagRepo.DeleteByAnimalIdAsync(animal.Id);
-        if (request.Tags.Count > 0)
-        {
-            var tags = request.Tags.Select(t => new AnimalTag { AnimalId = animal.Id, Tag = t }).ToList();
-            await tagRepo.BulkInsertAsync(tags);
-        }
-
         return Ok(new { message = "Updated", id = animal.Id });
     }
 
     [RequestSizeLimit(10_485_760)]
     [HttpPost("animals/{id:guid}/image/upload")]
-    public async Task<IActionResult> UploadImage(Guid id, IFormFile file, [FromServices] AIConfig aiCfg)
+    public async Task<IActionResult> UploadImage(Guid id, IFormFile file)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
-        if (animal == null) return NotFound();
-
         if (file.Length == 0) return BadRequest(new { error = "No file provided" });
 
         if (file.Length > 10 * 1024 * 1024)
@@ -225,43 +170,28 @@ public class AdminController(
         if (ext is not (".png" or ".jpg" or ".jpeg" or ".webp"))
             return BadRequest(new { error = "Only PNG, JPG, and WebP images are allowed" });
 
-        var fileName = $"{animal.Slug}{ext}";
-        var storagePath = Path.Combine(AppContext.BaseDirectory, aiCfg.ImageStoragePath);
-        Directory.CreateDirectory(storagePath);
-        var filePath = Path.Combine(storagePath, fileName);
-
-        await using var stream = new FileStream(filePath, FileMode.Create);
-        await file.CopyToAsync(stream);
-
-        var imageUrl = $"/images/animals/{fileName}";
-        await animalRepo.UpdateImageUrlAsync(id, imageUrl);
+        await using var stream = file.OpenReadStream();
+        var imageUrl = await animalService.UploadImageAsync(id, stream, file.FileName, file.Length);
+        if (imageUrl == null) return NotFound();
 
         return Ok(new { imageUrl });
     }
 
     [HttpPost("animals/{id:guid}/wikipedia-image")]
-    public async Task<IActionResult> FetchWikipediaImage(Guid id, [FromServices] WikipediaService wikipediaService, CancellationToken ct)
+    public async Task<IActionResult> FetchWikipediaImage(Guid id, CancellationToken ct)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
-        if (animal == null) return NotFound();
-
-        var article = await wikipediaService.GetAnimalArticleAsync(animal.CommonName, ct);
-        if (article?.ImageUrl == null)
+        var (imageUrl, source, license) = await animalService.FetchWikipediaImageAsync(id, ct);
+        if (imageUrl == null)
             return NotFound(new { error = "No Wikipedia image found for this animal" });
 
-        await animalRepo.UpdateImageUrlAsync(id, article.ImageUrl);
-        return Ok(new { imageUrl = article.ImageUrl, source = article.Url, license = article.ImageLicense });
+        return Ok(new { imageUrl, source, license });
     }
 
     [HttpPost("animals/{id:guid}/review")]
-    public async Task<IActionResult> ReviewAnimal(Guid id, [FromServices] ContentReviewService reviewService, CancellationToken ct)
+    public async Task<IActionResult> ReviewAnimal(Guid id, CancellationToken ct)
     {
-        var animal = await animalRepo.GetByIdAsync(id);
-        if (animal == null) return NotFound();
-
-        var tags = (await tagRepo.GetByAnimalIdAsync(id)).Select(t => t.Tag).ToList();
-        var suggestions = await reviewService.ReviewAnimalAsync(animal, tags, ct);
-
+        var suggestions = await animalService.ReviewAnimalAsync(id, ct);
+        if (suggestions == null) return NotFound();
         return Ok(new { suggestions });
     }
 }

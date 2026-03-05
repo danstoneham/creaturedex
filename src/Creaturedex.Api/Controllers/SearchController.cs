@@ -1,12 +1,11 @@
 using Creaturedex.Api.Services;
-using Creaturedex.Data.Repositories;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Creaturedex.Api.Controllers;
 
 [ApiController]
 [Route("api/search")]
-public class SearchController(SearchService searchService, TagRepository tagRepo) : ControllerBase
+public class SearchController(SearchService searchService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Search([FromQuery] string q, [FromQuery] string? type)
@@ -21,7 +20,7 @@ public class SearchController(SearchService searchService, TagRepository tagRepo
     [HttpGet("tags")]
     public async Task<IActionResult> GetTags()
     {
-        var tags = await tagRepo.GetAllUniqueAsync();
+        var tags = await searchService.GetAllUniqueTagsAsync();
         return Ok(tags);
     }
 }
