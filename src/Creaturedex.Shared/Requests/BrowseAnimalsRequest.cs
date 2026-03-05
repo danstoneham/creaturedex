@@ -9,4 +9,5 @@ public class BrowseAnimalsRequest
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 24;
     public string SortBy { get; set; } = "name";
+    public bool IncludeDrafts { get; set; }
 }

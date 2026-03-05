@@ -29,15 +29,16 @@ public class AnimalRepository(DbConnectionFactory db)
             new { Id = id });
     }
 
-    public async Task<IEnumerable<Animal>> BrowseAsync(Guid? categoryId, bool? isPet, string? tag, int page, int pageSize, string sortBy = "name")
+    public async Task<IEnumerable<Animal>> BrowseAsync(Guid? categoryId, bool? isPet, string? tag, int page, int pageSize, string sortBy = "name", bool includeDrafts = false)
     {
         using var conn = db.CreateConnection();
         var orderBy = sortBy == "newest" ? "CreatedAt DESC" : "CommonName ASC";
+        var publishFilter = includeDrafts ? "" : "AND a.IsPublished = 1";
 
         var sql = $"""
             SELECT DISTINCT a.* FROM Animals a
             {(tag != null ? "INNER JOIN AnimalTags t ON a.Id = t.AnimalId AND t.Tag = @Tag" : "")}
-            WHERE a.DeletedAt IS NULL AND a.IsPublished = 1
+            WHERE a.DeletedAt IS NULL {publishFilter}
               AND (@CategoryId IS NULL OR a.CategoryId = @CategoryId)
               AND (@IsPet IS NULL OR a.IsPet = @IsPet)
             ORDER BY a.{orderBy}
@@ -48,13 +49,14 @@ public class AnimalRepository(DbConnectionFactory db)
             new { CategoryId = categoryId, IsPet = isPet, Tag = tag, Offset = (page - 1) * pageSize, PageSize = pageSize });
     }
 
-    public async Task<int> CountAsync(Guid? categoryId, bool? isPet, string? tag)
+    public async Task<int> CountAsync(Guid? categoryId, bool? isPet, string? tag, bool includeDrafts = false)
     {
         using var conn = db.CreateConnection();
+        var publishFilter = includeDrafts ? "" : "AND a.IsPublished = 1";
         var sql = $"""
             SELECT COUNT(DISTINCT a.Id) FROM Animals a
             {(tag != null ? "INNER JOIN AnimalTags t ON a.Id = t.AnimalId AND t.Tag = @Tag" : "")}
-            WHERE a.DeletedAt IS NULL AND a.IsPublished = 1
+            WHERE a.DeletedAt IS NULL {publishFilter}
               AND (@CategoryId IS NULL OR a.CategoryId = @CategoryId)
               AND (@IsPet IS NULL OR a.IsPet = @IsPet)
             """;

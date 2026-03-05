@@ -22,8 +22,8 @@ public class AnimalService(
             categoryId = category?.Id;
         }
 
-        var animals = await animalRepo.BrowseAsync(categoryId, request.IsPet, request.Tag, request.Page, request.PageSize, request.SortBy);
-        var totalCount = await animalRepo.CountAsync(categoryId, request.IsPet, request.Tag);
+        var animals = await animalRepo.BrowseAsync(categoryId, request.IsPet, request.Tag, request.Page, request.PageSize, request.SortBy, request.IncludeDrafts);
+        var totalCount = await animalRepo.CountAsync(categoryId, request.IsPet, request.Tag, request.IncludeDrafts);
 
         var categories = (await categoryRepo.GetAllAsync()).ToDictionary(c => c.Id);
         var cards = new List<AnimalCardDto>();
@@ -50,7 +50,8 @@ public class AnimalService(
                 IsPet = animal.IsPet,
                 ImageUrl = animal.ImageUrl,
                 ConservationStatus = animal.ConservationStatus,
-                DifficultyRating = difficulty
+                DifficultyRating = difficulty,
+                IsPublished = animal.IsPublished
             });
         }
 

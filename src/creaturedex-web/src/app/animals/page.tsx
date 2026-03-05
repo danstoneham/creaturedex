@@ -40,6 +40,7 @@ export default function BrowsePage() {
         if (selectedCategory) params.category = selectedCategory;
         if (petsOnly) params.isPet = "true";
         if (sortBy) params.sortBy = sortBy;
+        if (isLoggedIn) params.includeDrafts = "true";
         const res = await api.animals.browse(params);
         setAnimals(res.animals);
         setTotalCount(res.totalCount);
@@ -50,7 +51,7 @@ export default function BrowsePage() {
       }
     };
     fetchAnimals();
-  }, [selectedCategory, petsOnly, sortBy]);
+  }, [selectedCategory, petsOnly, sortBy, isLoggedIn]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

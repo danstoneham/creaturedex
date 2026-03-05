@@ -111,6 +111,10 @@ export const api = {
       fetchApi<{ suggestions: ReviewSuggestion[] }>(`/api/admin/animals/${id}/review`, {
         method: "POST",
       }),
+    markReviewed: (id: string) =>
+      fetchApi<{ message: string }>(`/api/admin/review/${id}`, {
+        method: "PUT",
+      }),
     publishAnimal: (id: string) =>
       fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
         method: "PUT",

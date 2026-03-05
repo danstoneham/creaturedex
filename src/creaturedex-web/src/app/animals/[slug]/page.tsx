@@ -219,6 +219,23 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     );
   };
 
+  // Auto-mark as reviewed when all suggestions have been accepted/dismissed
+  const reviewedRef = useRef(false);
+  useEffect(() => {
+    if (reviewSuggestions && reviewSuggestions.length === 0 && profile && !reviewedRef.current) {
+      reviewedRef.current = true;
+      api.admin.markReviewed(profile.animal.id).then(async () => {
+        const data = await api.animals.getBySlug(slug);
+        setProfile(data);
+        setReviewSuggestions(null);
+        reviewedRef.current = false;
+      }).catch(err => {
+        console.error("Failed to mark as reviewed:", err);
+        reviewedRef.current = false;
+      });
+    }
+  }, [reviewSuggestions]);
+
   const handleTogglePublish = async () => {
     if (!profile) return;
     try {

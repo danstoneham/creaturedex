@@ -13,4 +13,5 @@ public class AnimalCardDto
     public string? ImageUrl { get; set; }
     public string? ConservationStatus { get; set; }
     public int? DifficultyRating { get; set; }
+    public bool IsPublished { get; set; }
 }

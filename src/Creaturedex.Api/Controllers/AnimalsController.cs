@@ -11,6 +11,10 @@ public class AnimalsController(AnimalService animalService) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Browse([FromQuery] BrowseAnimalsRequest request)
     {
+        // Only authenticated admins can see drafts
+        if (User.Identity?.IsAuthenticated != true)
+            request.IncludeDrafts = false;
+
         var (animals, totalCount) = await animalService.BrowseAsync(request);
         return Ok(new { animals, totalCount });
     }

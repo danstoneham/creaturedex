@@ -32,6 +32,9 @@ export default function AnimalCard({ animal }: AnimalCardProps) {
           )}
           <p className="text-sm text-text-muted mt-2 line-clamp-2">{animal.summary}</p>
           <div className="flex items-center gap-2 mt-3 flex-wrap">
+            {!animal.isPublished && (
+              <Badge variant="warning">Draft</Badge>
+            )}
             <Badge variant="primary">{animal.categoryName}</Badge>
             {animal.isPet && <Badge variant="secondary">Pet</Badge>}
             {animal.conservationStatus && (

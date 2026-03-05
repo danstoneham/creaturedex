@@ -10,6 +10,7 @@ export interface AnimalCard {
   imageUrl: string | null;
   conservationStatus: string | null;
   difficultyRating: number | null;
+  isPublished: boolean;
 }
 
 export interface AnimalProfile {
