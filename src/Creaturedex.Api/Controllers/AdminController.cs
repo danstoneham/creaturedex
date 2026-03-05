@@ -30,11 +30,22 @@ public class AdminController(
     [HttpPost("generate")]
     public async Task<IActionResult> Generate([FromBody] GenerateAnimalRequest request, CancellationToken ct)
     {
-        var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
-        if (id == null)
-            return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
-        var animal = await animalRepo.GetByIdAsync(id.Value);
-        return Ok(new { id, slug = animal?.Slug, message = $"Generated {request.AnimalName}" });
+        try
+        {
+            var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
+            if (id == null)
+                return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
+            var animal = await animalRepo.GetByIdAsync(id.Value);
+            return Ok(new { id, slug = animal?.Slug, message = $"Generated {request.AnimalName}" });
+        }
+        catch (DuplicateAnimalException ex)
+        {
+            return Conflict(new { error = ex.Message, slug = ex.Slug, duplicate = true });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}", detail = ex.Message, innerError = ex.InnerException?.Message });
+        }
     }
 
     [HttpPost("generate/batch")]
@@ -212,6 +223,20 @@ public class AdminController(
         await animalRepo.UpdateImageUrlAsync(id, imageUrl);
 
         return Ok(new { imageUrl });
+    }
+
+    [HttpPost("animals/{id:guid}/wikipedia-image")]
+    public async Task<IActionResult> FetchWikipediaImage(Guid id, [FromServices] WikipediaService wikipediaService, CancellationToken ct)
+    {
+        var animal = await animalRepo.GetByIdAsync(id);
+        if (animal == null) return NotFound();
+
+        var article = await wikipediaService.GetAnimalArticleAsync(animal.CommonName, ct);
+        if (article?.ImageUrl == null)
+            return NotFound(new { error = "No Wikipedia image found for this animal" });
+
+        await animalRepo.UpdateImageUrlAsync(id, article.ImageUrl);
+        return Ok(new { imageUrl = article.ImageUrl, source = article.Url, license = article.ImageLicense });
     }
 
     [HttpPost("animals/{id:guid}/review")]

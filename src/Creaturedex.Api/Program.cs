@@ -38,6 +38,12 @@ var ollamaEmbedder = new OllamaApiClient(new Uri(aiConfig.OllamaEndpoint));
 ollamaEmbedder.SelectedModel = aiConfig.EmbeddingModel;
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(ollamaEmbedder);
 
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<WikipediaService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Creaturedex/1.0 (animal encyclopedia; contact@creaturedex.com)");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddHttpClient<ImageGenerationService>(client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5); // Image generation can be slow

@@ -5,10 +5,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Creaturedex.AI.Services;
 
+public class DuplicateAnimalException(string animalName, string slug)
+    : Exception($"{animalName} already exists")
+{
+    public string AnimalName { get; } = animalName;
+    public string Slug { get; } = slug;
+}
+
 public class ContentGeneratorService(
     AIService aiService,
     EmbeddingService embeddingService,
     ImageGenerationService imageService,
+    WikipediaService wikipediaService,
     AnimalRepository animalRepo,
     CategoryRepository categoryRepo,
     TaxonomyRepository taxonomyRepo,
@@ -21,9 +29,11 @@ public class ContentGeneratorService(
     private const string SystemPrompt = """
         You are an expert zoologist, veterinarian, and animal care writer creating content for an animal encyclopedia called Creaturedex.
 
-        Your audience is teenagers and adults without a scientific background. Explain technical terms in plain English. Be warm, enthusiastic, and informative — never condescending.
+        Your audience is teenagers and adults without a scientific background. Explain technical terms in plain English — always spell out acronyms on first use (e.g. "DDT (a pesticide called dichlorodiphenyltrichloroethane)"). Be warm, enthusiastic, and informative — never condescending.
 
         When uncertain about specific numbers, provide ranges rather than guessing. Flag genuine uncertainty rather than presenting speculation as fact.
+
+        For fun facts: stick to well-known, easily verifiable facts. NEVER invent specific dates, names, or historical events. Prefer fascinating biological/behavioural facts over historical anecdotes.
 
         You MUST respond with valid JSON matching this exact schema:
         {
@@ -86,7 +96,34 @@ public class ContentGeneratorService(
         {
             logger.LogInformation("Generating content for: {AnimalName}", animalName);
 
-            var response = await aiService.CompleteAsync(SystemPrompt, $"Generate a complete profile for: {animalName}", ct);
+            // Early duplicate check before calling AI
+            var expectedSlug = animalName.ToLower().Replace(' ', '-');
+            var earlyCheck = await animalRepo.GetBySlugIncludingUnpublishedAsync(expectedSlug);
+            if (earlyCheck != null)
+                throw new DuplicateAnimalException(earlyCheck.CommonName, earlyCheck.Slug);
+
+            // Fetch Wikipedia reference material for factual grounding
+            var wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+            var userPrompt = $"Generate a complete profile for: {animalName}";
+            if (wikiArticle != null)
+            {
+                var reference = wikipediaService.FormatAsReference(wikiArticle);
+                userPrompt = $"""
+                    {userPrompt}
+
+                    === REFERENCE MATERIAL (from Wikipedia — use as factual ground truth) ===
+                    {reference}
+                    === END REFERENCE MATERIAL ===
+                    Use the reference material above for verifiable facts (taxonomy, conservation status, habitat, diet, lifespan, etc.). Prefer reference data over your own knowledge when they conflict.
+                    """;
+                logger.LogInformation("Injected Wikipedia reference for {AnimalName} ({Url})", animalName, wikiArticle.Url);
+            }
+            else
+            {
+                logger.LogWarning("No Wikipedia article found for {AnimalName}, generating without reference", animalName);
+            }
+
+            var response = await aiService.CompleteAsync(SystemPrompt, userPrompt, ct);
 
             // Strip markdown fences if present
             response = response.Trim();
@@ -105,6 +142,12 @@ public class ContentGeneratorService(
                 logger.LogWarning("Category {Slug} not found, falling back to wild-mammals", categorySlug);
                 category = await categoryRepo.GetBySlugAsync("wild-mammals");
             }
+
+            // Check for duplicate slug
+            var slug = root.GetProperty("slug").GetString() ?? animalName.ToLower().Replace(' ', '-');
+            var existing = await animalRepo.GetBySlugIncludingUnpublishedAsync(slug);
+            if (existing != null)
+                throw new DuplicateAnimalException(existing.CommonName, existing.Slug);
 
             // Create taxonomy
             var taxElement = root.GetProperty("taxonomy");
@@ -128,7 +171,7 @@ public class ContentGeneratorService(
 
             var animal = new Animal
             {
-                Slug = root.GetProperty("slug").GetString() ?? animalName.ToLower().Replace(' ', '-'),
+                Slug = slug,
                 CommonName = root.GetProperty("commonName").GetString() ?? animalName,
                 ScientificName = GetStringOrNull(root, "scientificName"),
                 Summary = root.GetProperty("summary").GetString() ?? "",
@@ -215,13 +258,21 @@ public class ContentGeneratorService(
                 }
             }
 
+            // Use Wikipedia image as fallback if no AI-generated image
+            var currentAnimal = await animalRepo.GetByIdAsync(animalId);
+            if (currentAnimal?.ImageUrl == null && wikiArticle?.ImageUrl != null)
+            {
+                await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
+                logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
+            }
+
             logger.LogInformation("Successfully generated: {AnimalName} (ID: {Id})", animalName, animalId);
             return animalId;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to generate content for: {AnimalName}", animalName);
-            return null;
+            throw;
         }
     }
 

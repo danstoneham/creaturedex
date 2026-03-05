@@ -10,6 +10,11 @@ import type {
   ReviewSuggestion,
 } from "./types";
 
+export interface ApiError extends Error {
+  status: number;
+  body: Record<string, unknown> | null;
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
@@ -23,7 +28,12 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+    let body: Record<string, unknown> | null = null;
+    try { body = await res.json(); } catch { /* ignore */ }
+    const err = new Error(body?.error ? String(body.error) : `API error: ${res.status} ${res.statusText}`);
+    (err as ApiError).body = body;
+    (err as ApiError).status = res.status;
+    throw err;
   }
 
   return res.json();
@@ -92,6 +102,10 @@ export const api = {
       fetchApi<{ id: string; slug: string; message: string }>("/api/admin/generate", {
         method: "POST",
         body: JSON.stringify({ animalName, skipImage: true }),
+      }),
+    fetchWikipediaImage: (id: string) =>
+      fetchApi<{ imageUrl: string; source: string; license: string }>(`/api/admin/animals/${id}/wikipedia-image`, {
+        method: "POST",
       }),
     reviewAnimal: (id: string) =>
       fetchApi<{ suggestions: ReviewSuggestion[] }>(`/api/admin/animals/${id}/review`, {

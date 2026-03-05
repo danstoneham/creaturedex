@@ -28,6 +28,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [isFetchingWikiImage, setIsFetchingWikiImage] = useState(false);
   const [reviewSuggestions, setReviewSuggestions] = useState<ReviewSuggestion[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,6 +146,21 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     }
   };
 
+  const handleFetchWikipediaImage = async () => {
+    if (!profile) return;
+    setIsFetchingWikiImage(true);
+    try {
+      await api.admin.fetchWikipediaImage(profile.animal.id);
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+    } catch (err) {
+      console.error("Failed to fetch Wikipedia image:", err);
+      alert("No Wikipedia image found for this animal");
+    } finally {
+      setIsFetchingWikiImage(false);
+    }
+  };
+
   const handleReview = async () => {
     if (!profile) return;
     setIsReviewing(true);
@@ -159,32 +175,39 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     }
   };
 
-  const handleAcceptSuggestion = (suggestion: ReviewSuggestion) => {
-    if (!isEditing && profile) {
-      const { animal } = profile;
-      const initialData: Record<string, string | boolean | null> = {
-        commonName: animal.commonName,
-        scientificName: animal.scientificName,
-        summary: animal.summary,
-        description: animal.description,
-        categoryId: animal.categoryId,
-        isPet: animal.isPet,
-        conservationStatus: animal.conservationStatus,
-        nativeRegion: animal.nativeRegion,
-        habitat: animal.habitat,
-        diet: animal.diet,
-        lifespan: animal.lifespan,
-        sizeInfo: animal.sizeInfo,
-        behaviour: animal.behaviour,
-        funFacts: animal.funFacts,
-      };
-      initialData[suggestion.field] = suggestion.suggestedValue;
-      setEditData(initialData);
-      setEditTags([...profile.tags]);
-      setIsEditing(true);
-    } else {
-      setEditData(prev => ({ ...prev, [suggestion.field]: suggestion.suggestedValue }));
+  const handleAcceptSuggestion = async (suggestion: ReviewSuggestion) => {
+    if (!profile) return;
+    const { animal } = profile;
+
+    // Build full update payload with the suggestion applied
+    const updateData = {
+      commonName: animal.commonName,
+      scientificName: animal.scientificName,
+      summary: animal.summary,
+      description: animal.description,
+      categoryId: animal.categoryId,
+      isPet: animal.isPet,
+      conservationStatus: animal.conservationStatus,
+      nativeRegion: animal.nativeRegion,
+      habitat: animal.habitat,
+      diet: animal.diet,
+      lifespan: animal.lifespan,
+      sizeInfo: animal.sizeInfo,
+      behaviour: animal.behaviour,
+      funFacts: animal.funFacts,
+      tags: [...profile.tags],
+    };
+    (updateData as Record<string, unknown>)[suggestion.field] = suggestion.suggestedValue;
+
+    try {
+      await api.admin.updateAnimal(profile.animal.id, updateData);
+      const data = await api.animals.getBySlug(slug);
+      setProfile(data);
+    } catch (err) {
+      console.error("Failed to apply suggestion:", err);
+      alert("Failed to apply suggestion");
     }
+
     setReviewSuggestions(prev =>
       prev ? prev.filter(s => s !== suggestion) : null
     );
@@ -232,7 +255,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
         <textarea
           value={(editData[field] as string) ?? currentValue ?? ""}
           onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm min-h-[120px] focus:ring-primary focus:border-primary"
+          className="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 text-sm min-h-[120px] focus:ring-primary focus:border-primary"
         />
       );
     }
@@ -241,7 +264,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
         type="text"
         value={(editData[field] as string) ?? currentValue ?? ""}
         onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-primary focus:border-primary"
+        className="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 text-sm focus:ring-primary focus:border-primary"
       />
     );
   };
@@ -366,11 +389,13 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           isSaving={isSaving}
           isGeneratingImage={isGeneratingImage}
           isReviewing={isReviewing}
+          isFetchingWikiImage={isFetchingWikiImage}
           onToggleEdit={handleEdit}
           onSave={handleSave}
           onCancel={handleCancel}
           onGenerateImage={handleGenerateImage}
           onUploadImage={handleUploadImage}
+          onFetchWikipediaImage={handleFetchWikipediaImage}
           onReview={handleReview}
           onTogglePublish={handleTogglePublish}
         />
@@ -388,14 +413,14 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
       {/* Draft badge */}
       {isLoggedIn && !animal.isPublished && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6 text-sm text-amber-800 font-medium">
+        <div className="bg-amber-900/30 border border-amber-700 rounded-lg p-3 mb-6 text-sm text-amber-300 font-medium">
           Draft — this animal is not published yet
         </div>
       )}
 
       {/* Disclaimer for unreviewed content */}
       {!isReviewed && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-sm text-yellow-800">
+        <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 mb-6 text-sm text-yellow-300">
           This content was AI-generated and has not yet been reviewed by a human. Information may contain inaccuracies.
         </div>
       )}
@@ -419,7 +444,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                 type="text"
                 value={(editData.commonName as string) ?? animal.commonName}
                 onChange={(e) => setEditData(prev => ({ ...prev, commonName: e.target.value }))}
-                className="text-3xl font-bold text-text w-full border-b border-gray-300 focus:border-primary focus:outline-none"
+                className="text-3xl font-bold text-text w-full border-b border-gray-600 bg-transparent focus:border-primary focus:outline-none"
               />
             ) : (
               <h1 className="text-3xl font-bold text-text">{animal.commonName}</h1>
@@ -430,7 +455,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                 value={(editData.scientificName as string) ?? animal.scientificName ?? ""}
                 onChange={(e) => setEditData(prev => ({ ...prev, scientificName: e.target.value }))}
                 placeholder="Scientific name"
-                className="text-lg text-text-muted italic mt-1 w-full border-b border-gray-300 focus:border-primary focus:outline-none"
+                className="text-lg text-text-muted italic mt-1 w-full border-b border-gray-600 bg-transparent focus:border-primary focus:outline-none"
               />
             ) : (
               animal.scientificName && <p className="text-lg text-text-muted italic mt-1">{animal.scientificName}</p>
@@ -448,7 +473,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             {isEditing ? (
               <div className="flex gap-1.5 mt-3 flex-wrap items-center">
                 {editTags.map((tag) => (
-                  <span key={tag} className="inline-flex items-center gap-1 bg-gray-100 text-text-muted text-xs px-2 py-1 rounded-full">
+                  <span key={tag} className="inline-flex items-center gap-1 bg-gray-800 text-text-muted text-xs px-2 py-1 rounded-full">
                     {tag}
                     <button onClick={() => handleRemoveTag(tag)} className="text-gray-400 hover:text-red-500">&times;</button>
                   </span>
@@ -460,7 +485,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                     onChange={(e) => setNewTag(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
                     placeholder="Add tag..."
-                    className="text-xs border border-gray-300 rounded px-2 py-1 w-24 focus:ring-primary focus:border-primary"
+                    className="text-xs border border-gray-600 bg-gray-800 text-gray-100 rounded px-2 py-1 w-24 focus:ring-primary focus:border-primary"
                   />
                   <button onClick={handleAddTag} className="text-xs text-primary hover:underline">Add</button>
                 </div>
@@ -478,11 +503,11 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
           {/* Hero image */}
           {animal.imageUrl ? (
-            <div className="aspect-video rounded-xl overflow-hidden mb-8">
+            <div className="aspect-video rounded-xl overflow-hidden mb-8 bg-gray-900">
               <img
                 src={animal.imageUrl}
                 alt={animal.commonName}
-                className="w-full h-full object-cover"
+                className={`w-full h-full ${animal.imageUrl.startsWith("http") ? "object-contain" : "object-cover"}`}
               />
             </div>
           ) : (
@@ -496,7 +521,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             <textarea
               value={(editData.summary as string) ?? animal.summary}
               onChange={(e) => setEditData(prev => ({ ...prev, summary: e.target.value }))}
-              className="w-full text-lg text-text leading-relaxed rounded-lg border border-gray-300 px-3 py-2 min-h-[80px] focus:ring-primary focus:border-primary"
+              className="w-full text-lg text-text leading-relaxed rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 min-h-[80px] focus:ring-primary focus:border-primary"
             />
           ) : (
             <p className="text-lg text-text leading-relaxed mb-8">{animal.summary}</p>

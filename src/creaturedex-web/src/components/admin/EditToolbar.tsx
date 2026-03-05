@@ -6,22 +6,26 @@ interface EditToolbarProps {
   isSaving: boolean;
   isGeneratingImage: boolean;
   isReviewing: boolean;
+  isFetchingWikiImage?: boolean;
   onToggleEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
   onGenerateImage: () => void;
   onUploadImage: () => void;
+  onFetchWikipediaImage?: () => void;
   onReview: () => void;
   onTogglePublish: () => void;
 }
 
 export default function EditToolbar({
   isEditing, isPublished, isSaving, isGeneratingImage, isReviewing,
+  isFetchingWikiImage,
   onToggleEdit, onSave, onCancel, onGenerateImage, onUploadImage,
+  onFetchWikipediaImage,
   onReview, onTogglePublish,
 }: EditToolbarProps) {
   return (
-    <div className="bg-surface border border-gray-200 rounded-xl p-3 mb-6 flex flex-wrap items-center gap-2">
+    <div className="bg-surface border border-gray-700 rounded-xl p-3 mb-6 flex flex-wrap items-center gap-2">
       {isEditing ? (
         <>
           <button
@@ -34,11 +38,11 @@ export default function EditToolbar({
           <button
             onClick={onCancel}
             disabled={isSaving}
-            className="bg-gray-100 text-text px-4 py-1.5 rounded-lg text-sm hover:bg-gray-200"
+            className="bg-gray-800 text-gray-300 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-700"
           >
             Cancel
           </button>
-          <div className="w-px h-6 bg-gray-200 mx-1" />
+          <div className="w-px h-6 bg-gray-700 mx-1" />
         </>
       ) : (
         <button
@@ -52,22 +56,32 @@ export default function EditToolbar({
       <button
         onClick={onGenerateImage}
         disabled={isGeneratingImage}
-        className="bg-secondary/10 text-secondary px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-secondary/20 disabled:opacity-50"
+        className="bg-purple-900/40 text-purple-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-purple-900/60 disabled:opacity-50"
       >
         {isGeneratingImage ? "Generating..." : "Generate Image"}
       </button>
 
       <button
         onClick={onUploadImage}
-        className="bg-gray-100 text-text px-4 py-1.5 rounded-lg text-sm hover:bg-gray-200"
+        className="bg-gray-800 text-gray-300 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-700"
       >
         Upload Image
       </button>
 
+      {onFetchWikipediaImage && (
+        <button
+          onClick={onFetchWikipediaImage}
+          disabled={isFetchingWikiImage}
+          className="bg-emerald-900/40 text-emerald-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-emerald-900/60 disabled:opacity-50"
+        >
+          {isFetchingWikiImage ? "Fetching..." : "Wiki Image"}
+        </button>
+      )}
+
       <button
         onClick={onReview}
         disabled={isReviewing}
-        className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 disabled:opacity-50"
+        className="bg-blue-900/40 text-blue-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-900/60 disabled:opacity-50"
       >
         {isReviewing ? "Reviewing..." : "AI Review"}
       </button>
@@ -77,8 +91,8 @@ export default function EditToolbar({
           onClick={onTogglePublish}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
             isPublished
-              ? "bg-red-50 text-red-700 hover:bg-red-100"
-              : "bg-green-50 text-green-700 hover:bg-green-100"
+              ? "bg-red-900/40 text-red-300 hover:bg-red-900/60"
+              : "bg-green-900/40 text-green-300 hover:bg-green-900/60"
           }`}
         >
           {isPublished ? "Unpublish" : "Publish"}
