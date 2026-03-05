@@ -31,7 +31,7 @@ function SearchContent() {
                 className={`px-3 py-1 rounded-full text-sm ${
                   searchType === "text"
                     ? "bg-primary text-white"
-                    : "bg-gray-100 text-text-muted hover:bg-gray-200"
+                    : "bg-gray-800 text-text-muted hover:bg-gray-700"
                 }`}
               >
                 Keyword
@@ -40,7 +40,7 @@ function SearchContent() {
                 className={`px-3 py-1 rounded-full text-sm ${
                   searchType === "semantic"
                     ? "bg-primary text-white"
-                    : "bg-gray-100 text-text-muted hover:bg-gray-200"
+                    : "bg-gray-800 text-text-muted hover:bg-gray-700"
                 }`}
               >
                 Smart Search

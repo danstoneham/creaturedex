@@ -32,7 +32,7 @@ export default function MatcherResults({ recommendations, onReset }: MatcherResu
 
       <div className="space-y-6">
         {recommendations.map((rec, i) => (
-          <div key={rec.animal.id} className="bg-surface rounded-xl border border-gray-200 p-6">
+          <div key={rec.animal.id} className="bg-surface rounded-xl border border-gray-700 p-6">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold">
                 #{i + 1}
@@ -62,7 +62,7 @@ export default function MatcherResults({ recommendations, onReset }: MatcherResu
       <div className="text-center mt-8">
         <button
           onClick={onReset}
-          className="px-6 py-2 bg-gray-100 text-text rounded-lg hover:bg-gray-200 transition-colors"
+          className="px-6 py-2 bg-gray-800 text-text rounded-lg hover:bg-gray-700 transition-colors"
         >
           Try Again
         </button>

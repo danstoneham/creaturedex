@@ -18,7 +18,7 @@ export default function Tabs({ tabs, defaultTab }: TabsProps) {
 
   return (
     <div>
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-700">
         <nav className="flex gap-4 -mb-px" aria-label="Tabs">
           {tabs.map((tab) => (
             <button
@@ -27,7 +27,7 @@ export default function Tabs({ tabs, defaultTab }: TabsProps) {
               className={`px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? "border-primary text-primary"
-                  : "border-transparent text-text-muted hover:text-primary hover:border-gray-300"
+                  : "border-transparent text-text-muted hover:text-primary hover:border-gray-600"
               }`}
             >
               {tab.label}

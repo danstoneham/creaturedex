@@ -28,7 +28,7 @@ export default function SearchBar({ initialQuery = "", size = "sm", className = 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search animals..."
-          className={`w-full rounded-full border border-gray-300 bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${
+          className={`w-full rounded-full border border-gray-600 bg-surface focus:ring-2 focus:ring-primary focus:border-primary transition-colors ${
             size === "lg" ? "px-6 py-4 text-lg" : "px-4 py-2 text-sm"
           }`}
         />

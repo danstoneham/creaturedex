@@ -16,6 +16,16 @@ public class AIService(IChatClient chatClient)
         return response.Text ?? string.Empty;
     }
 
+    public async Task<string> CompleteViaStreamAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+    {
+        var sb = new System.Text.StringBuilder();
+        await foreach (var chunk in StreamAsync(systemPrompt, userPrompt, ct))
+        {
+            sb.Append(chunk);
+        }
+        return sb.ToString();
+    }
+
     public async IAsyncEnumerable<string> StreamAsync(string systemPrompt, string userPrompt,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {

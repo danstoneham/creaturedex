@@ -21,7 +21,7 @@ export default function MobileNav({ isOpen, onClose }: MobileNavProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="md:hidden border-t border-gray-200 bg-surface">
+    <div className="md:hidden border-t border-gray-700 bg-surface">
       <nav className="px-4 py-3 space-y-1">
         {navLinks.map((link) => (
           <Link
@@ -31,7 +31,7 @@ export default function MobileNav({ isOpen, onClose }: MobileNavProps) {
             className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
               pathname === link.href
                 ? "bg-primary/10 text-primary"
-                : "text-text-muted hover:bg-gray-100 hover:text-primary"
+                : "text-text-muted hover:bg-gray-800 hover:text-primary"
             }`}
           >
             {link.label}

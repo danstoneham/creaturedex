@@ -143,7 +143,7 @@ export default function MatcherFlow({ onComplete }: MatcherFlowProps) {
           <span>Step {currentStep + 1} of {steps.length}</span>
           <span>{Math.round(progress)}%</span>
         </div>
-        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
           <div
             className="h-full bg-primary rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
@@ -168,7 +168,7 @@ export default function MatcherFlow({ onComplete }: MatcherFlowProps) {
               className={`flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all ${
                 isSelected
                   ? "border-primary bg-primary/5"
-                  : "border-gray-200 hover:border-primary-light"
+                  : "border-gray-700 hover:border-primary-light"
               }`}
             >
               <span className="text-2xl">{option.icon}</span>

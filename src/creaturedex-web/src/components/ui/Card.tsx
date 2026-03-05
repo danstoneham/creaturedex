@@ -7,7 +7,7 @@ interface CardProps {
 export default function Card({ children, className = "", hover = false }: CardProps) {
   return (
     <div
-      className={`bg-surface rounded-xl border border-gray-200 overflow-hidden ${
+      className={`bg-surface rounded-xl border border-gray-700 overflow-hidden ${
         hover ? "transition-shadow hover:shadow-lg cursor-pointer" : ""
       } ${className}`}
     >
