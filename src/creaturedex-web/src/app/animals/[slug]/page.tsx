@@ -29,6 +29,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   const [isFetchingWikiImage, setIsFetchingWikiImage] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [reviewSuggestions, setReviewSuggestions] = useState<ReviewSuggestion[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -146,6 +147,21 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     }
   };
 
+  const handleRegenerate = async () => {
+    if (!profile) return;
+    if (!window.confirm(`Regenerate "${profile.animal.commonName}"? This will delete the current version and create a new one from scratch.`)) return;
+    setIsRegenerating(true);
+    try {
+      const result = await api.admin.regenerateAnimal(profile.animal.id);
+      // Redirect to the new animal's page
+      window.location.href = `/animals/${result.slug}`;
+    } catch (err) {
+      console.error("Failed to regenerate:", err);
+      alert("Failed to regenerate animal");
+      setIsRegenerating(false);
+    }
+  };
+
   const handleFetchWikipediaImage = async () => {
     if (!profile) return;
     setIsFetchingWikiImage(true);
@@ -197,6 +213,16 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
       funFacts: animal.funFacts,
       tags: [...profile.tags],
     };
+    // Safety check: warn if the suggestion would dramatically shorten a field
+    const currentVal = (updateData as Record<string, unknown>)[suggestion.field];
+    if (typeof currentVal === "string" && typeof suggestion.suggestedValue === "string"
+        && currentVal.length > 100 && suggestion.suggestedValue.length < currentVal.length * 0.3) {
+      const confirmed = window.confirm(
+        `Warning: accepting this suggestion will shorten "${suggestion.field}" from ${currentVal.length} to ${suggestion.suggestedValue.length} characters (${Math.round(suggestion.suggestedValue.length / currentVal.length * 100)}% of original). This may be an AI error. Continue?`
+      );
+      if (!confirmed) return;
+    }
+
     (updateData as Record<string, unknown>)[suggestion.field] = suggestion.suggestedValue;
 
     try {
@@ -407,12 +433,14 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           isGeneratingImage={isGeneratingImage}
           isReviewing={isReviewing}
           isFetchingWikiImage={isFetchingWikiImage}
+          isRegenerating={isRegenerating}
           onToggleEdit={handleEdit}
           onSave={handleSave}
           onCancel={handleCancel}
           onGenerateImage={handleGenerateImage}
           onUploadImage={handleUploadImage}
           onFetchWikipediaImage={handleFetchWikipediaImage}
+          onRegenerate={handleRegenerate}
           onReview={handleReview}
           onTogglePublish={handleTogglePublish}
         />

@@ -48,6 +48,20 @@ public class AdminController(
         }
     }
 
+    [HttpPost("animals/{id:guid}/regenerate")]
+    public async Task<IActionResult> Regenerate(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var (newId, slug) = await contentGenerator.RegenerateAnimalAsync(id, ct);
+            return Ok(new { id = newId, slug, message = "Regenerated successfully" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("generate/batch")]
     public async Task<IActionResult> GenerateBatch([FromBody] BatchGenerateRequest request, CancellationToken ct)
     {

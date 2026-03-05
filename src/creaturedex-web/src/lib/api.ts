@@ -115,6 +115,10 @@ export const api = {
       fetchApi<{ message: string }>(`/api/admin/review/${id}`, {
         method: "PUT",
       }),
+    regenerateAnimal: (id: string) =>
+      fetchApi<{ id: string; slug: string; message: string }>(`/api/admin/animals/${id}/regenerate`, {
+        method: "POST",
+      }),
     publishAnimal: (id: string) =>
       fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
         method: "PUT",

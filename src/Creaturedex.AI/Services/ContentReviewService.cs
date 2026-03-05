@@ -30,8 +30,9 @@ public class ContentReviewService(AIService aiService, WikipediaService wikipedi
 
         IMPORTANT rules for suggestions:
         - ALL suggestions must remain focused on the animal being reviewed. Never replace content about this animal with content about a different animal.
-        - For "funFacts": if a fun fact is inaccurate or not specifically about this animal, replace it with a DIFFERENT interesting and accurate fun fact about the SAME animal. Do not correct it by adding facts about other animals.
-        - The suggestedValue for funFacts must be the COMPLETE JSON array of fun facts (not just the one being changed), since the field stores all fun facts together.
+        - The suggestedValue MUST ALWAYS be the COMPLETE replacement text for the entire field. NEVER provide just a snippet, correction, or partial text. The suggestedValue will directly replace the current field value, so it must be complete and ready to use.
+        - For long-form fields like "description", "summary", "habitat", "behaviour", "diet": the suggestedValue must be the FULL text of that field with your correction applied. If you are fixing one sentence in a 4-paragraph description, include ALL 4 paragraphs in suggestedValue with only the relevant sentence changed.
+        - For "funFacts": the suggestedValue must be the COMPLETE JSON array of fun facts (not just the one being changed), since the field stores all fun facts together. If a fun fact is inaccurate or not specifically about this animal, replace it with a DIFFERENT interesting and accurate fun fact about the SAME animal.
         - The currentValue for funFacts should be the specific fact being changed (quote it in full), NOT a reference like "the second fun fact".
         - In the message field, always QUOTE the specific content you're referring to rather than using ordinal references like "the first", "the second". For example say: 'The fact "Peregrine Falcons were the first birds to fly in space" is inaccurate' rather than 'The second fun fact is inaccurate'.
         - When replacing a fun fact, the replacement must NOT duplicate or overlap with any of the OTHER existing fun facts. Check all existing facts before suggesting a replacement.

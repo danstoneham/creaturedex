@@ -276,6 +276,26 @@ public class ContentGeneratorService(
         }
     }
 
+    public async Task<(Guid? Id, string Slug)> RegenerateAnimalAsync(Guid existingId, CancellationToken ct = default)
+    {
+        var existing = await animalRepo.GetByIdAsync(existingId)
+            ?? throw new Exception($"Animal {existingId} not found");
+
+        var animalName = existing.CommonName;
+        logger.LogInformation("Regenerating content for: {AnimalName} (replacing {Id})", animalName, existingId);
+
+        // Soft-delete the existing animal
+        await animalRepo.SoftDeleteAsync(existingId);
+
+        // Generate a new one
+        var newId = await GenerateAnimalAsync(animalName, false, ct);
+        if (newId == null)
+            throw new Exception($"Failed to regenerate {animalName}");
+
+        var newAnimal = await animalRepo.GetByIdAsync(newId.Value);
+        return (newId, newAnimal?.Slug ?? animalName.ToLower().Replace(' ', '-'));
+    }
+
     public async Task<List<(string Name, Guid? Id, string? Error)>> BatchGenerateAsync(List<string> animalNames, CancellationToken ct = default)
     {
         var results = new List<(string, Guid?, string?)>();

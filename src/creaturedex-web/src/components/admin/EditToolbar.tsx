@@ -7,21 +7,23 @@ interface EditToolbarProps {
   isGeneratingImage: boolean;
   isReviewing: boolean;
   isFetchingWikiImage?: boolean;
+  isRegenerating?: boolean;
   onToggleEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
   onGenerateImage: () => void;
   onUploadImage: () => void;
   onFetchWikipediaImage?: () => void;
+  onRegenerate?: () => void;
   onReview: () => void;
   onTogglePublish: () => void;
 }
 
 export default function EditToolbar({
   isEditing, isPublished, isSaving, isGeneratingImage, isReviewing,
-  isFetchingWikiImage,
+  isFetchingWikiImage, isRegenerating,
   onToggleEdit, onSave, onCancel, onGenerateImage, onUploadImage,
-  onFetchWikipediaImage,
+  onFetchWikipediaImage, onRegenerate,
   onReview, onTogglePublish,
 }: EditToolbarProps) {
   return (
@@ -86,7 +88,16 @@ export default function EditToolbar({
         {isReviewing ? "Reviewing..." : "AI Review"}
       </button>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        {onRegenerate && (
+          <button
+            onClick={onRegenerate}
+            disabled={isRegenerating}
+            className="bg-orange-900/40 text-orange-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-900/60 disabled:opacity-50"
+          >
+            {isRegenerating ? "Regenerating..." : "Regenerate"}
+          </button>
+        )}
         <button
           onClick={onTogglePublish}
           className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
