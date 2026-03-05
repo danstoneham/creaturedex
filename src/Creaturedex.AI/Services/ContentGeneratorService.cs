@@ -284,8 +284,8 @@ public class ContentGeneratorService(
         var animalName = existing.CommonName;
         logger.LogInformation("Regenerating content for: {AnimalName} (replacing {Id})", animalName, existingId);
 
-        // Soft-delete the existing animal
-        await animalRepo.SoftDeleteAsync(existingId);
+        // Hard-delete the existing animal and all related records
+        await animalRepo.DeleteAsync(existingId);
 
         // Generate a new one
         var newId = await GenerateAnimalAsync(animalName, false, ct);

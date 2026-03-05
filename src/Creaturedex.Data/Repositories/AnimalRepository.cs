@@ -113,12 +113,17 @@ public class AnimalRepository(DbConnectionFactory db)
             """, animal);
     }
 
-    public async Task SoftDeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid id)
     {
         using var conn = db.CreateConnection();
-        await conn.ExecuteAsync(
-            "UPDATE Animals SET DeletedAt = SYSUTCDATETIME() WHERE Id = @Id AND DeletedAt IS NULL",
-            new { Id = id });
+        await conn.ExecuteAsync("DELETE FROM AnimalTags WHERE AnimalId = @Id", new { Id = id });
+        await conn.ExecuteAsync("DELETE FROM AnimalCharacteristics WHERE AnimalId = @Id", new { Id = id });
+        await conn.ExecuteAsync("DELETE FROM PetCareGuides WHERE AnimalId = @Id", new { Id = id });
+        await conn.ExecuteAsync("DELETE FROM AnimalEmbeddings WHERE AnimalId = @Id", new { Id = id });
+        var animal = await conn.QuerySingleOrDefaultAsync<Animal>("SELECT * FROM Animals WHERE Id = @Id", new { Id = id });
+        await conn.ExecuteAsync("DELETE FROM Animals WHERE Id = @Id", new { Id = id });
+        if (animal?.TaxonomyId != null)
+            await conn.ExecuteAsync("DELETE FROM Taxonomy WHERE Id = @Id", new { Id = animal.TaxonomyId });
     }
 
     public async Task<IEnumerable<Animal>> GetUnreviewedAsync()
