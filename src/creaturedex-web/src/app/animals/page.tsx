@@ -70,7 +70,7 @@ export default function BrowsePage() {
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Filter sidebar */}
         <aside className="lg:w-64 flex-shrink-0">
-          <div className="bg-surface rounded-xl border border-gray-700 p-4 space-y-6 lg:sticky lg:top-24">
+          <div className="bg-surface rounded-xl border border-[#3D2A1D] p-4 space-y-6 lg:sticky lg:top-24">
             {/* Categories */}
             <div>
               <h3 className="font-semibold text-sm text-text mb-3">Category</h3>
@@ -82,7 +82,7 @@ export default function BrowsePage() {
                     className={`block w-full text-left px-3 py-1.5 rounded text-sm transition-colors ${
                       selectedCategory === cat.slug
                         ? "bg-primary/10 text-primary font-medium"
-                        : "text-text-muted hover:bg-gray-800"
+                        : "text-text-muted hover:bg-[#3D2A1D]"
                     }`}
                   >
                     {cat.name}
@@ -98,7 +98,7 @@ export default function BrowsePage() {
                   type="checkbox"
                   checked={petsOnly}
                   onChange={(e) => setPetsOnly(e.target.checked)}
-                  className="rounded border-gray-600 text-primary focus:ring-primary"
+                  className="rounded border-[#5C3D2E] text-primary focus:ring-primary"
                 />
                 <span className="text-sm text-text">Pets only</span>
               </label>
@@ -110,7 +110,7 @@ export default function BrowsePage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full rounded-lg border border-gray-600 px-3 py-1.5 text-sm focus:ring-primary focus:border-primary bg-gray-900 text-gray-100"
+                className="w-full rounded-lg border border-[#5C3D2E] px-3 py-1.5 text-sm focus:ring-primary focus:border-primary bg-[#1E120B] text-[#F5EDE3]"
               >
                 <option value="name">A-Z</option>
                 <option value="newest">Newest</option>

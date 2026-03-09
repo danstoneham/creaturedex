@@ -2,19 +2,24 @@ import Link from "next/link";
 
 export default function Footer() {
   return (
-    <footer className="bg-primary-dark text-white mt-auto">
+    <footer className="bg-surface text-white mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-lg font-bold mb-3">🐾 Creaturedex</h3>
-            <p className="text-sm text-gray-300">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/logo-compact.png"
+              alt="Creaturedex"
+              className="h-14 w-auto mb-3"
+            />
+            <p className="text-sm text-[#C4B5A4]">
               An AI-powered animal encyclopedia. Discover, learn, and find your
               perfect pet companion.
             </p>
           </div>
           <div>
             <h4 className="font-semibold mb-3">Explore</h4>
-            <ul className="space-y-2 text-sm text-gray-300">
+            <ul className="space-y-2 text-sm text-[#C4B5A4]">
               <li><Link href="/animals" className="hover:text-white transition-colors">Browse Animals</Link></li>
               <li><Link href="/matcher" className="hover:text-white transition-colors">Pet Matcher</Link></li>
               <li><Link href="/search" className="hover:text-white transition-colors">Search</Link></li>
@@ -22,13 +27,13 @@ export default function Footer() {
           </div>
           <div>
             <h4 className="font-semibold mb-3">About</h4>
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-[#C4B5A4]">
               Content is AI-generated and should be verified with professional
               sources for medical or care decisions.
             </p>
           </div>
         </div>
-        <div className="border-t border-gray-600 mt-8 pt-4 text-center text-xs text-gray-400">
+        <div className="border-t border-[#3D2A1D] mt-8 pt-4 text-center text-xs text-[#8B7355]">
           &copy; {new Date().getFullYear()} Creaturedex. Built with AI.
         </div>
       </div>

@@ -27,7 +27,7 @@ export default function EditToolbar({
   onReview, onTogglePublish,
 }: EditToolbarProps) {
   return (
-    <div className="bg-surface border border-gray-700 rounded-xl p-3 mb-6 flex flex-wrap items-center gap-2">
+    <div className="bg-surface border border-[#3D2A1D] rounded-xl p-3 mb-6 flex flex-wrap items-center gap-2">
       {isEditing ? (
         <>
           <button
@@ -40,11 +40,11 @@ export default function EditToolbar({
           <button
             onClick={onCancel}
             disabled={isSaving}
-            className="bg-gray-800 text-gray-300 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-700"
+            className="bg-[#3D2A1D] text-[#C4B5A4] px-4 py-1.5 rounded-lg text-sm hover:bg-[#4A3728]"
           >
             Cancel
           </button>
-          <div className="w-px h-6 bg-gray-700 mx-1" />
+          <div className="w-px h-6 bg-[#3D2A1D] mx-1" />
         </>
       ) : (
         <button
@@ -65,7 +65,7 @@ export default function EditToolbar({
 
       <button
         onClick={onUploadImage}
-        className="bg-gray-800 text-gray-300 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-700"
+        className="bg-[#3D2A1D] text-[#C4B5A4] px-4 py-1.5 rounded-lg text-sm hover:bg-[#4A3728]"
       >
         Upload Image
       </button>

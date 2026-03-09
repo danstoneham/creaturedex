@@ -23,13 +23,14 @@ const categories = [
 ];
 
 // ---------------------------------------------------------------------------
-// Design tokens (matching the brief: primary #2D6A4F, secondary #E09F3E)
+// Design tokens — Safari Sunset theme
 // ---------------------------------------------------------------------------
-const PRIMARY = "#2D6A4F";
-const PRIMARY_DARK = "#1B4332";
-const PRIMARY_LIGHT = "#52B788";
-const SECONDARY = "#E09F3E";
-const BG = "#FAFAF8";
+const PRIMARY = "#D4882B";
+const PRIMARY_DARK = "#A8611A";
+const PRIMARY_LIGHT = "#E8A84C";
+const SECONDARY = "#3B7A57";
+const SECONDARY_DARK = "#2D6044";
+const BG = "#FFF8F0";
 
 export default function HomePage() {
   const router = useRouter();
@@ -72,19 +73,19 @@ export default function HomePage() {
       <section
         className="relative overflow-hidden"
         style={{
-          background: `linear-gradient(135deg, ${PRIMARY_DARK} 0%, ${PRIMARY} 55%, ${PRIMARY_LIGHT} 100%)`,
+          background: `linear-gradient(135deg, ${PRIMARY_DARK} 0%, #5C3310 40%, ${PRIMARY} 70%, ${PRIMARY_LIGHT} 100%)`,
         }}
       >
         {/* Decorative texture rings */}
         <div
           aria-hidden
           className="pointer-events-none absolute -top-32 -right-32 w-[480px] h-[480px] rounded-full opacity-10"
-          style={{ background: "radial-gradient(circle, #fff 0%, transparent 70%)" }}
+          style={{ background: "radial-gradient(circle, #FFE08A 0%, transparent 70%)" }}
         />
         <div
           aria-hidden
           className="pointer-events-none absolute -bottom-24 -left-24 w-[360px] h-[360px] rounded-full opacity-10"
-          style={{ background: "radial-gradient(circle, #fff 0%, transparent 70%)" }}
+          style={{ background: "radial-gradient(circle, #FFE08A 0%, transparent 70%)" }}
         />
         {/* Subtle grid overlay */}
         <div
@@ -96,29 +97,21 @@ export default function HomePage() {
           }}
         />
 
-        <div className="relative mx-auto max-w-5xl px-6 py-24 md:py-36 flex flex-col items-center text-center">
-          {/* Eyebrow badge */}
-          <span
-            className="mb-6 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-widest"
-            style={{ backgroundColor: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)" }}
-          >
-            <span style={{ color: SECONDARY }}>✦</span> AI-Powered Encyclopedia
-          </span>
-
-          {/* Headline */}
-          <h1
-            className="mb-5 text-5xl font-bold leading-tight tracking-tight md:text-7xl"
-            style={{ color: "#fff", letterSpacing: "-0.03em" }}
-          >
-            Discover the
-            <br />
-            <span style={{ color: SECONDARY }}>Animal Kingdom</span>
-          </h1>
+        <div className="relative mx-auto max-w-5xl px-6 py-6 md:py-10 flex flex-col items-center text-center">
+          {/* Logo hero */}
+          <div className="mb-3 drop-shadow-2xl">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/logo-wide.png"
+              alt="Creaturedex — The Animal Encyclopedia"
+              className="w-[320px] md:w-[480px] lg:w-[560px] h-auto"
+            />
+          </div>
 
           {/* Tagline */}
           <p
             className="mb-10 max-w-xl text-lg leading-relaxed md:text-xl"
-            style={{ color: "rgba(255,255,255,0.82)" }}
+            style={{ color: "rgba(255,255,255,0.88)" }}
           >
             An intelligent encyclopedia of every creature on Earth — from backyard pets to deep-ocean giants, powered by AI.
           </p>
@@ -141,8 +134,8 @@ export default function HomePage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search animals, e.g. &ldquo;golden retriever&rdquo;…"
-                className="flex-1 bg-transparent py-4 px-4 text-base outline-none placeholder:text-gray-400"
-                style={{ color: "#111" }}
+                className="flex-1 bg-transparent py-4 px-4 text-base outline-none placeholder:text-[#B8A898]"
+                style={{ color: "#3D2B1F" }}
                 aria-label="Search for animals"
               />
               <button
@@ -177,19 +170,19 @@ export default function HomePage() {
       {/* ------------------------------------------------------------------ */}
       <div
         className="border-b"
-        style={{ backgroundColor: "#fff", borderColor: "#E8E8E4" }}
+        style={{ backgroundColor: "#FFFAF5", borderColor: "#E8DFD3" }}
       >
-        <div className="mx-auto max-w-5xl px-6 py-4 flex flex-wrap justify-center gap-8 text-sm font-medium" style={{ color: "#555" }}>
+        <div className="mx-auto max-w-5xl px-6 py-4 flex flex-wrap justify-center gap-8 text-sm font-medium" style={{ color: "#6B5B4E" }}>
           <span className="flex items-center gap-2">
             <span className="text-base">🐾</span>
             <strong style={{ color: PRIMARY }}>500+</strong> animals catalogued
           </span>
-          <span className="hidden sm:block" style={{ color: "#D0CFC8" }}>|</span>
+          <span className="hidden sm:block" style={{ color: "#D4C9BC" }}>|</span>
           <span className="flex items-center gap-2">
             <span className="text-base">📂</span>
             <strong style={{ color: PRIMARY }}>11</strong> categories
           </span>
-          <span className="hidden sm:block" style={{ color: "#D0CFC8" }}>|</span>
+          <span className="hidden sm:block" style={{ color: "#D4C9BC" }}>|</span>
           <span className="flex items-center gap-2">
             <span className="text-base">✨</span>
             Powered by AI — always growing
@@ -210,12 +203,12 @@ export default function HomePage() {
             <h2
               id="categories-heading"
               className="text-3xl font-bold tracking-tight"
-              style={{ color: PRIMARY_DARK, letterSpacing: "-0.02em" }}
+              style={{ color: "#3D2B1F", letterSpacing: "-0.02em" }}
             >
               Explore by Category
             </h2>
-            <p style={{ color: "#6B6B5E" }} className="text-base">
-              Dive into the world's most fascinating animal groups.
+            <p style={{ color: "#8B7355" }} className="text-base">
+              Dive into the world&apos;s most fascinating animal groups.
             </p>
           </div>
 
@@ -235,13 +228,13 @@ export default function HomePage() {
                     <div>
                       <p
                         className="font-semibold text-sm leading-snug"
-                        style={{ color: PRIMARY_DARK }}
+                        style={{ color: "#3D2B1F" }}
                       >
                         {cat.name}
                       </p>
                       <p
                         className="mt-0.5 text-xs leading-snug line-clamp-2"
-                        style={{ color: "#888" }}
+                        style={{ color: "#8B7355" }}
                       >
                         {cat.description}
                       </p>
@@ -314,7 +307,7 @@ export default function HomePage() {
             href="/matcher"
             className="group relative overflow-hidden rounded-2xl p-8 flex flex-col gap-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             style={{
-              background: `linear-gradient(135deg, ${SECONDARY} 0%, #C77C1A 100%)`,
+              background: `linear-gradient(135deg, ${SECONDARY} 0%, ${SECONDARY_DARK} 100%)`,
               color: "#fff",
             }}
           >
@@ -322,10 +315,10 @@ export default function HomePage() {
             <div
               aria-hidden
               className="pointer-events-none absolute -top-8 -right-8 w-40 h-40 rounded-full opacity-25"
-              style={{ backgroundColor: "#FFE08A" }}
+              style={{ backgroundColor: "#A8E6C3" }}
             />
             <div className="relative">
-              <span className="text-4xl" role="img" aria-label="heart">💛</span>
+              <span className="text-4xl" role="img" aria-label="heart">💚</span>
               <h3 className="mt-3 text-xl font-bold leading-snug">
                 Find Your Perfect Pet
               </h3>
@@ -345,7 +338,7 @@ export default function HomePage() {
         {/* -------------------------------------------------------------- */}
         {/* FOOTER TAGLINE                                                  */}
         {/* -------------------------------------------------------------- */}
-        <div className="text-center text-sm pb-4" style={{ color: "#AEADA6" }}>
+        <div className="text-center text-sm pb-4" style={{ color: "#B8A898" }}>
           Creaturedex — every creature has a story worth knowing.
         </div>
       </main>

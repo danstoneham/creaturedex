@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Creaturedex.Api"],
+      "port": 5163
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["src/creaturedex-web/node_modules/next/dist/bin/next", "dev", "src/creaturedex-web"],
+      "port": 3000
+    }
+  ]
+}

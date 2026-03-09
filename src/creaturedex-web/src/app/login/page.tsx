@@ -32,7 +32,7 @@ export default function LoginPage() {
         <h1 className="text-2xl font-bold text-text text-center mb-8">Sign in to Creaturedex</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-red-900/40 border border-red-700 rounded-lg p-3 text-sm text-red-300">
+            <div className="bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-700">
               {error}
             </div>
           )}
@@ -43,7 +43,7 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border border-gray-600 px-3 py-2 text-sm focus:ring-primary focus:border-primary bg-gray-900 text-gray-100"
+              className="w-full rounded-lg border border-[#D4C4B0] px-3 py-2 text-sm focus:ring-primary focus:border-primary bg-white text-text"
               required
               autoFocus
             />
@@ -55,7 +55,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-600 px-3 py-2 text-sm focus:ring-primary focus:border-primary bg-gray-900 text-gray-100"
+              className="w-full rounded-lg border border-[#D4C4B0] px-3 py-2 text-sm focus:ring-primary focus:border-primary bg-white text-text"
               required
             />
           </div>

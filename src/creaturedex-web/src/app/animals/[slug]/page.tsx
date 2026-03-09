@@ -298,7 +298,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
         <textarea
           value={(editData[field] as string) ?? currentValue ?? ""}
           onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
-          className="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 text-sm min-h-[120px] focus:ring-primary focus:border-primary"
+          className="w-full rounded-lg border border-[#5C3D2E] bg-[#3D2A1D] text-[#F5EDE3] px-3 py-2 text-sm min-h-[120px] focus:ring-primary focus:border-primary"
         />
       );
     }
@@ -307,7 +307,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
         type="text"
         value={(editData[field] as string) ?? currentValue ?? ""}
         onChange={(e) => setEditData(prev => ({ ...prev, [field]: e.target.value }))}
-        className="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 text-sm focus:ring-primary focus:border-primary"
+        className="w-full rounded-lg border border-[#5C3D2E] bg-[#3D2A1D] text-[#F5EDE3] px-3 py-2 text-sm focus:ring-primary focus:border-primary"
       />
     );
   };
@@ -458,14 +458,14 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
       {/* Draft badge */}
       {isLoggedIn && !animal.isPublished && (
-        <div className="bg-amber-900/30 border border-amber-700 rounded-lg p-3 mb-6 text-sm text-amber-300 font-medium">
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-6 text-sm text-amber-700 font-medium">
           Draft — this animal is not published yet
         </div>
       )}
 
       {/* Disclaimer for unreviewed content */}
       {!isReviewed && (
-        <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 mb-6 text-sm text-yellow-300">
+        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-6 text-sm text-yellow-700">
           This content was AI-generated and has not yet been reviewed by a human. Information may contain inaccuracies.
         </div>
       )}
@@ -489,7 +489,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                 type="text"
                 value={(editData.commonName as string) ?? animal.commonName}
                 onChange={(e) => setEditData(prev => ({ ...prev, commonName: e.target.value }))}
-                className="text-3xl font-bold text-text w-full border-b border-gray-600 bg-transparent focus:border-primary focus:outline-none"
+                className="text-3xl font-bold text-text w-full border-b border-[#D4C4B0] bg-transparent focus:border-primary focus:outline-none"
               />
             ) : (
               <h1 className="text-3xl font-bold text-text">{animal.commonName}</h1>
@@ -500,7 +500,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                 value={(editData.scientificName as string) ?? animal.scientificName ?? ""}
                 onChange={(e) => setEditData(prev => ({ ...prev, scientificName: e.target.value }))}
                 placeholder="Scientific name"
-                className="text-lg text-text-muted italic mt-1 w-full border-b border-gray-600 bg-transparent focus:border-primary focus:outline-none"
+                className="text-lg text-text-muted italic mt-1 w-full border-b border-[#D4C4B0] bg-transparent focus:border-primary focus:outline-none"
               />
             ) : (
               animal.scientificName && <p className="text-lg text-text-muted italic mt-1">{animal.scientificName}</p>
@@ -518,9 +518,9 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             {isEditing ? (
               <div className="flex gap-1.5 mt-3 flex-wrap items-center">
                 {editTags.map((tag) => (
-                  <span key={tag} className="inline-flex items-center gap-1 bg-gray-800 text-text-muted text-xs px-2 py-1 rounded-full">
+                  <span key={tag} className="inline-flex items-center gap-1 bg-[#F5EDE3] text-text-muted text-xs px-2 py-1 rounded-full">
                     {tag}
-                    <button onClick={() => handleRemoveTag(tag)} className="text-gray-400 hover:text-red-500">&times;</button>
+                    <button onClick={() => handleRemoveTag(tag)} className="text-text-muted hover:text-red-500">&times;</button>
                   </span>
                 ))}
                 <div className="flex items-center gap-1">
@@ -530,7 +530,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
                     onChange={(e) => setNewTag(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTag())}
                     placeholder="Add tag..."
-                    className="text-xs border border-gray-600 bg-gray-800 text-gray-100 rounded px-2 py-1 w-24 focus:ring-primary focus:border-primary"
+                    className="text-xs border border-[#D4C4B0] bg-white text-text rounded px-2 py-1 w-24 focus:ring-primary focus:border-primary"
                   />
                   <button onClick={handleAddTag} className="text-xs text-primary hover:underline">Add</button>
                 </div>
@@ -548,7 +548,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
           {/* Hero image */}
           {animal.imageUrl ? (
-            <div className="aspect-video rounded-xl overflow-hidden mb-8 bg-gray-900">
+            <div className="aspect-video rounded-xl overflow-hidden mb-8 bg-surface">
               <img
                 src={animal.imageUrl}
                 alt={animal.commonName}
@@ -566,7 +566,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             <textarea
               value={(editData.summary as string) ?? animal.summary}
               onChange={(e) => setEditData(prev => ({ ...prev, summary: e.target.value }))}
-              className="w-full text-lg text-text leading-relaxed rounded-lg border border-gray-600 bg-gray-800 text-gray-100 px-3 py-2 min-h-[80px] focus:ring-primary focus:border-primary"
+              className="w-full text-lg text-text leading-relaxed rounded-lg border border-[#5C3D2E] bg-[#3D2A1D] text-[#F5EDE3] px-3 py-2 min-h-[80px] focus:ring-primary focus:border-primary"
             />
           ) : (
             <p className="text-lg text-text leading-relaxed mb-8">{animal.summary}</p>

@@ -29,7 +29,7 @@ export default function QuickFacts({ animal, careGuide, characteristics }: Quick
       </dl>
 
       {careGuide && (
-        <div className="mt-6 pt-4 border-t border-gray-700">
+        <div className="mt-6 pt-4 border-t border-[#E8DFD3]">
           <h4 className="font-semibold text-sm text-text mb-3">Pet Suitability</h4>
           <div className="space-y-3">
             <div>

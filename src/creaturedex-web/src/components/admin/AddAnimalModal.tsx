@@ -53,11 +53,11 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4" onClick={onClose}>
       <div
-        className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md p-6"
+        className="bg-surface border border-[#3D2A1D] rounded-xl shadow-2xl w-full max-w-md p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-bold text-gray-100 mb-2">Add New Animal</h2>
-        <p className="text-sm text-gray-400 mb-4">
+        <h2 className="text-lg font-bold text-[#F5EDE3] mb-2">Add New Animal</h2>
+        <p className="text-sm text-text-muted mb-4">
           Enter the animal name and AI will generate all the content. You can edit it afterwards.
         </p>
         <form onSubmit={handleSubmit}>
@@ -68,16 +68,16 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
                 <div className="mt-2 flex gap-2">
                   <Link
                     href={`/animals/${duplicateSlug}`}
-                    className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-medium"
+                    className="inline-flex items-center gap-1 text-primary hover:text-primary-light font-medium"
                     onClick={onClose}
                   >
                     View existing animal &rarr;
                   </Link>
-                  <span className="text-gray-600">|</span>
+                  <span className="text-[#5C3D2E]">|</span>
                   <button
                     type="button"
                     onClick={handleReset}
-                    className="text-gray-400 hover:text-gray-200 font-medium"
+                    className="text-text-muted hover:text-[#F5EDE3] font-medium"
                   >
                     Try another name
                   </button>
@@ -90,12 +90,12 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
             value={animalName}
             onChange={(e) => { setAnimalName(e.target.value); setError(""); setDuplicateSlug(null); }}
             placeholder="e.g. Red Fox, Emperor Penguin..."
-            className="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            className="w-full rounded-lg border border-[#5C3D2E] bg-[#3D2A1D] text-[#F5EDE3] placeholder-[#8B7355] px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-primary focus:border-primary outline-none"
             disabled={loading}
             autoFocus
           />
           {loading && (
-            <div className="bg-indigo-900/30 border border-indigo-700 rounded-lg p-3 mb-4 text-sm text-indigo-300 flex items-center gap-2">
+            <div className="bg-primary/10 border border-primary/30 rounded-lg p-3 mb-4 text-sm text-primary flex items-center gap-2">
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -108,14 +108,14 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              className="px-4 py-2 rounded-lg text-sm text-text-muted hover:text-[#F5EDE3] hover:bg-[#3D2A1D] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !animalName.trim()}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? "Generating..." : "Generate with AI"}
             </button>

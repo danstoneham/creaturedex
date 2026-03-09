@@ -53,7 +53,7 @@ function SuggestionCard({
   onDismiss: (index: number) => void;
 }) {
   return (
-    <div className="bg-gray-900 rounded-lg border border-blue-800 p-3">
+    <div className="bg-surface rounded-lg border border-blue-800 p-3">
       <div className="flex items-start gap-2 mb-2">
         <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
           suggestion.severity === "warning"
@@ -62,19 +62,19 @@ function SuggestionCard({
         }`}>
           {suggestion.severity === "warning" ? "Warning" : "Info"}
         </span>
-        <span className="text-xs font-medium text-gray-400 uppercase">{suggestion.field}</span>
+        <span className="text-xs font-medium text-text-muted uppercase">{suggestion.field}</span>
       </div>
-      <p className="text-sm text-gray-300 mb-2">{suggestion.message}</p>
+      <p className="text-sm text-[#C4B5A4] mb-2">{suggestion.message}</p>
       {suggestion.currentValue && (
         <div className="text-sm bg-red-900/20 border border-red-900 rounded p-2 mb-2">
-          <p className="text-xs text-gray-400 mb-1">Current:</p>
-          <FormatValue value={suggestion.currentValue} className="text-gray-400 line-through" />
+          <p className="text-xs text-text-muted mb-1">Current:</p>
+          <FormatValue value={suggestion.currentValue} className="text-text-muted line-through" />
         </div>
       )}
       {suggestion.suggestedValue && (
         <div className="text-sm bg-green-900/40 border border-green-800 rounded p-2 mb-2">
-          <p className="text-xs text-gray-400 mb-1">Suggested:</p>
-          <FormatValue value={suggestion.suggestedValue} className="text-gray-200" />
+          <p className="text-xs text-text-muted mb-1">Suggested:</p>
+          <FormatValue value={suggestion.suggestedValue} className="text-[#F5EDE3]" />
         </div>
       )}
       <div className="flex gap-2">
@@ -88,7 +88,7 @@ function SuggestionCard({
         )}
         <button
           onClick={() => onDismiss(index)}
-          className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded hover:bg-gray-700"
+          className="text-xs bg-[#3D2A1D] text-text-muted px-2 py-1 rounded hover:bg-[#4A3728]"
         >
           Dismiss
         </button>
@@ -160,7 +160,7 @@ export default function ReviewPanel({ suggestions, onAccept, onDismiss, onClose 
                 className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
                   activeTab === field
                     ? "border-primary text-primary"
-                    : "border-transparent text-text-muted hover:text-primary hover:border-gray-600"
+                    : "border-transparent text-text-muted hover:text-primary hover:border-[#5C3D2E]"
                 }`}
               >
                 {fieldLabel(field)}
