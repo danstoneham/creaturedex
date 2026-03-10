@@ -11,6 +11,8 @@ import ConservationBadge from "@/components/animals/ConservationBadge";
 import DifficultyRating from "@/components/animals/DifficultyRating";
 import EditToolbar from "@/components/admin/EditToolbar";
 import ReviewPanel from "@/components/admin/ReviewPanel";
+import ImageAttribution from "@/components/animals/ImageAttribution";
+import { AnimalHabitatMap } from "@/components/animals/HabitatMapWrapper";
 import type { AnimalProfile, ReviewSuggestion } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -347,6 +349,25 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
     // Not valid JSON, treat as plain text
   }
 
+  // Compute habitat map center and zoom from bbox
+  const hasMap = !!animal.mapTileUrlTemplate;
+  let mapCenterLat = 20;
+  let mapCenterLng = 0;
+  let mapZoom = 2;
+  if (hasMap && animal.mapMinLat != null && animal.mapMaxLat != null && animal.mapMinLng != null && animal.mapMaxLng != null) {
+    mapCenterLat = (animal.mapMinLat + animal.mapMaxLat) / 2;
+    mapCenterLng = (animal.mapMinLng + animal.mapMaxLng) / 2;
+    const latSpan = animal.mapMaxLat - animal.mapMinLat;
+    const lngSpan = animal.mapMaxLng - animal.mapMinLng;
+    const maxSpan = Math.max(latSpan, lngSpan);
+    if (maxSpan > 150) mapZoom = 2;
+    else if (maxSpan > 80) mapZoom = 3;
+    else if (maxSpan > 40) mapZoom = 4;
+    else if (maxSpan > 20) mapZoom = 5;
+    else if (maxSpan > 10) mapZoom = 6;
+    else mapZoom = 7;
+  }
+
   const contentTabs = [
     {
       id: "overview",
@@ -372,6 +393,23 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
             id: "habitat",
             label: "Habitat",
             content: renderEditableText("habitat", animal.habitat, true),
+          },
+        ]
+      : []),
+    ...(hasMap
+      ? [
+          {
+            id: "range-map",
+            label: "Range Map",
+            content: (
+              <AnimalHabitatMap
+                tileUrlTemplate={animal.mapTileUrlTemplate!}
+                centerLat={mapCenterLat}
+                centerLng={mapCenterLng}
+                zoom={mapZoom}
+                observationCount={animal.mapObservationCount}
+              />
+            ),
           },
         ]
       : []),
@@ -453,6 +491,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           onAccept={handleAcceptSuggestion}
           onDismiss={handleDismissSuggestion}
           onClose={() => setReviewSuggestions(null)}
+          animal={profile.animal}
         />
       )}
 
@@ -548,11 +587,18 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
 
           {/* Hero image */}
           {animal.imageUrl ? (
-            <div className="aspect-video rounded-xl overflow-hidden mb-8 bg-surface">
-              <img
-                src={animal.imageUrl}
-                alt={animal.commonName}
-                className={`w-full h-full ${animal.imageUrl.startsWith("http") ? "object-contain" : "object-cover"}`}
+            <div className="mb-8">
+              <div className="aspect-video rounded-xl overflow-hidden bg-surface">
+                <img
+                  src={animal.imageUrl}
+                  alt={animal.commonName}
+                  className={`w-full h-full ${animal.imageUrl.startsWith("http") ? "object-contain" : "object-cover"}`}
+                />
+              </div>
+              <ImageAttribution
+                license={animal.imageLicense}
+                rightsHolder={animal.imageRightsHolder}
+                source={animal.imageSource}
               />
             </div>
           ) : (

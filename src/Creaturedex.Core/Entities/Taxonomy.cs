@@ -11,4 +11,9 @@ public class Taxonomy
     public string? Genus { get; set; }
     public string? Species { get; set; }
     public string? Subspecies { get; set; }
+
+    // GBIF/CoL extended taxonomy
+    public string? ColTaxonId { get; set; }
+    public string? Authorship { get; set; }
+    public string? Synonyms { get; set; }
 }

@@ -8,6 +8,7 @@ import type {
   MatcherResult,
   UpdateAnimalRequest,
   ReviewSuggestion,
+  SpeciesSuggestion,
 } from "./types";
 
 export interface ApiError extends Error {
@@ -98,11 +99,13 @@ export const api = {
       fetchApi<{ imageUrl: string; animalName: string }>(`/api/admin/image/generate/${id}`, {
         method: "POST",
       }),
-    generateAnimal: (animalName: string) =>
+    generateAnimal: (animalName: string, taxonKey?: number, scientificName?: string) =>
       fetchApi<{ id: string; slug: string; message: string }>("/api/admin/generate", {
         method: "POST",
-        body: JSON.stringify({ animalName, skipImage: true }),
+        body: JSON.stringify({ animalName, skipImage: true, taxonKey, scientificName }),
       }),
+    searchSpecies: (query: string) =>
+      fetchApi<SpeciesSuggestion[]>(`/api/admin/species/search?q=${encodeURIComponent(query)}`),
     fetchWikipediaImage: (id: string) =>
       fetchApi<{ imageUrl: string; source: string; license: string }>(`/api/admin/animals/${id}/wikipedia-image`, {
         method: "POST",

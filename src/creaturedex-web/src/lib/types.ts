@@ -46,6 +46,17 @@ export interface Animal {
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
+  gbifTaxonKey?: number;
+  gbifCanonicalName?: string;
+  mapTileUrlTemplate?: string;
+  mapObservationCount?: number;
+  mapMinLat?: number;
+  mapMaxLat?: number;
+  mapMinLng?: number;
+  mapMaxLng?: number;
+  imageLicense?: string;
+  imageRightsHolder?: string;
+  imageSource?: string;
 }
 
 export interface Taxonomy {
@@ -58,6 +69,9 @@ export interface Taxonomy {
   genus: string | null;
   species: string | null;
   subspecies: string | null;
+  colTaxonId?: string;
+  authorship?: string;
+  synonyms?: string;
 }
 
 export interface PetCareGuide {
@@ -155,4 +169,14 @@ export interface ReviewSuggestion {
   message: string;
   currentValue: string;
   suggestedValue: string;
+}
+
+export interface SpeciesSuggestion {
+  taxonKey: number;
+  scientificName: string;
+  commonName?: string;
+  rank?: string;
+  status?: string;
+  family?: string;
+  order?: string;
 }

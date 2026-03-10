@@ -69,7 +69,7 @@ public class WikipediaService(HttpClient httpClient, IMemoryCache cache, ILogger
         return article;
     }
 
-    public string FormatAsReference(WikipediaArticle article)
+    public static string FormatAsReference(WikipediaArticle article)
     {
         var parts = new List<string> { $"Title: {article.Title}", $"Summary: {article.Summary}" };
 

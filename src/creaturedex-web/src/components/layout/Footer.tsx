@@ -34,7 +34,14 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-[#3D2A1D] mt-8 pt-4 text-center text-xs text-[#8B7355]">
-          &copy; {new Date().getFullYear()} Creaturedex. Built with AI.
+          <p>&copy; {new Date().getFullYear()} Creaturedex. Built with AI.</p>
+          <p className="mt-1">
+            Occurrence data from{" "}
+            <a href="https://www.gbif.org" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#C4B5A4]">GBIF.org</a>
+            {" "}&middot;{" "}
+            Taxonomy from{" "}
+            <a href="https://www.catalogueoflife.org" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#C4B5A4]">Catalogue of Life</a>
+          </p>
         </div>
       </div>
     </footer>

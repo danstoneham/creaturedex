@@ -5,7 +5,17 @@
       "Bash(dotnet add:*)",
       "Bash(npm run:*)",
       "Bash(npx next:*)",
-      "Bash(sqlcmd:*)"
+      "Bash(sqlcmd:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python:*)",
+      "mcp__plugin_playwright_playwright__browser_resize",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "Bash(grep:*)",
+      "WebFetch(domain:api.gbif.org)"
     ]
   }
 }

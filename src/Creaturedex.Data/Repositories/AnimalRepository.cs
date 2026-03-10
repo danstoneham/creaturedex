@@ -83,11 +83,17 @@ public class AnimalRepository(DbConnectionFactory db)
             INSERT INTO Animals (Id, Slug, CommonName, ScientificName, Summary, Description,
                 CategoryId, TaxonomyId, IsPet, ImageUrl, ConservationStatus, NativeRegion,
                 Habitat, Diet, Lifespan, SizeInfo, Behaviour, FunFacts,
-                GeneratedAt, IsPublished, CreatedAt, UpdatedAt, Version)
+                GeneratedAt, IsPublished, CreatedAt, UpdatedAt, Version,
+                GbifTaxonKey, GbifCanonicalName, MapTileUrlTemplate, MapObservationCount,
+                MapMinLat, MapMaxLat, MapMinLng, MapMaxLng,
+                ImageLicense, ImageRightsHolder, ImageSource)
             VALUES (@Id, @Slug, @CommonName, @ScientificName, @Summary, @Description,
                 @CategoryId, @TaxonomyId, @IsPet, @ImageUrl, @ConservationStatus, @NativeRegion,
                 @Habitat, @Diet, @Lifespan, @SizeInfo, @Behaviour, @FunFacts,
-                @GeneratedAt, @IsPublished, @CreatedAt, @UpdatedAt, @Version)
+                @GeneratedAt, @IsPublished, @CreatedAt, @UpdatedAt, @Version,
+                @GbifTaxonKey, @GbifCanonicalName, @MapTileUrlTemplate, @MapObservationCount,
+                @MapMinLat, @MapMaxLat, @MapMinLng, @MapMaxLng,
+                @ImageLicense, @ImageRightsHolder, @ImageSource)
             """, animal);
 
         return animal.Id;
@@ -108,6 +114,12 @@ public class AnimalRepository(DbConnectionFactory db)
                 SizeInfo = @SizeInfo, Behaviour = @Behaviour, FunFacts = @FunFacts,
                 GeneratedAt = @GeneratedAt, ReviewedAt = @ReviewedAt, ReviewedBy = @ReviewedBy,
                 IsPublished = @IsPublished, UpdatedAt = @UpdatedAt,
+                GbifTaxonKey = @GbifTaxonKey, GbifCanonicalName = @GbifCanonicalName,
+                MapTileUrlTemplate = @MapTileUrlTemplate, MapObservationCount = @MapObservationCount,
+                MapMinLat = @MapMinLat, MapMaxLat = @MapMaxLat,
+                MapMinLng = @MapMinLng, MapMaxLng = @MapMaxLng,
+                ImageLicense = @ImageLicense, ImageRightsHolder = @ImageRightsHolder,
+                ImageSource = @ImageSource,
                 Version = Version + 1
             WHERE Id = @Id AND Version = @Version AND DeletedAt IS NULL
             """, animal);
@@ -170,5 +182,17 @@ public class AnimalRepository(DbConnectionFactory db)
         await conn.ExecuteAsync(
             "UPDATE Animals SET ImageUrl = @ImageUrl, UpdatedAt = SYSUTCDATETIME() WHERE Id = @Id AND DeletedAt IS NULL",
             new { Id = id, ImageUrl = imageUrl });
+    }
+
+    public async Task UpdateImageAttributionAsync(Guid id, string license, string? rightsHolder, string? source)
+    {
+        using var conn = db.CreateConnection();
+        await conn.ExecuteAsync("""
+            UPDATE Animals
+            SET ImageLicense = @License,
+                ImageRightsHolder = @RightsHolder,
+                ImageSource = @Source
+            WHERE Id = @Id
+            """, new { Id = id, License = license, RightsHolder = rightsHolder, Source = source });
     }
 }

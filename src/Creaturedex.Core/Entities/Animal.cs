@@ -28,4 +28,21 @@ public class Animal
     public DateTime UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
     public int Version { get; set; } = 1;
+
+    // GBIF identifiers
+    public int? GbifTaxonKey { get; set; }
+    public string? GbifCanonicalName { get; set; }
+
+    // Map metadata
+    public string? MapTileUrlTemplate { get; set; }
+    public int? MapObservationCount { get; set; }
+    public double? MapMinLat { get; set; }
+    public double? MapMaxLat { get; set; }
+    public double? MapMinLng { get; set; }
+    public double? MapMaxLng { get; set; }
+
+    // Image attribution
+    public string? ImageLicense { get; set; }
+    public string? ImageRightsHolder { get; set; }
+    public string? ImageSource { get; set; }
 }

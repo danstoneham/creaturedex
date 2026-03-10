@@ -12,7 +12,8 @@ namespace Creaturedex.Api.Controllers;
 public class AdminController(
     ContentGenerationService contentGenService,
     ContentGeneratorService contentGenerator,
-    AnimalService animalService) : ControllerBase
+    AnimalService animalService,
+    GbifService gbifService) : ControllerBase
 {
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus()
@@ -21,12 +22,22 @@ public class AdminController(
         return Ok(status);
     }
 
+    [HttpGet("species/search")]
+    public async Task<IActionResult> SearchSpecies([FromQuery] string q, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+            return BadRequest(new { error = "Query parameter 'q' is required" });
+
+        var suggestions = await gbifService.SearchSpeciesAsync(q.Trim(), ct);
+        return Ok(suggestions);
+    }
+
     [HttpPost("generate")]
     public async Task<IActionResult> Generate([FromBody] GenerateAnimalRequest request, CancellationToken ct)
     {
         try
         {
-            var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, ct);
+            var id = await contentGenerator.GenerateAnimalAsync(request.AnimalName, request.SkipImage, request.TaxonKey, request.ScientificName, ct);
             if (id == null)
                 return StatusCode(500, new { error = $"Failed to generate content for {request.AnimalName}" });
             var animal = await animalService.GetByIdAsync(id.Value);

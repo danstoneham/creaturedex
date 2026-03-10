@@ -1,4 +1,7 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Creaturedex.AI.Models;
 using Creaturedex.Core.Entities;
 using Creaturedex.Data.Repositories;
 using Microsoft.Extensions.Logging;
@@ -17,6 +20,8 @@ public class ContentGeneratorService(
     EmbeddingService embeddingService,
     ImageGenerationService imageService,
     WikipediaService wikipediaService,
+    GbifService gbifService,
+    ImageScreeningService imageScreeningService,
     AnimalRepository animalRepo,
     CategoryRepository categoryRepo,
     TaxonomyRepository taxonomyRepo,
@@ -27,9 +32,12 @@ public class ContentGeneratorService(
     ILogger<ContentGeneratorService> logger)
 {
     private const string SystemPrompt = """
-        You are an expert zoologist, veterinarian, and animal care writer creating content for an animal encyclopedia called Creaturedex.
-
-        Your audience is teenagers and adults without a scientific background. Explain technical terms in plain English — always spell out acronyms on first use (e.g. "DDT (a pesticide called dichlorodiphenyltrichloroethane)"). Be warm, enthusiastic, and informative — never condescending.
+        You are a skilled science writer for Creaturedex, a children's animal encyclopedia.
+        Your audience is 8–16 year olds. Write with warmth, enthusiasm, and clear language.
+        IMPORTANT: All factual data has been pre-filled from authoritative scientific sources.
+        Your job is ONLY to write engaging prose using the provided data.
+        DO NOT invent taxonomy — use exactly what is provided.
+        DO NOT change conservation status — use exactly what is provided.
 
         When uncertain about specific numbers, provide ranges rather than guessing. Flag genuine uncertainty rather than presenting speculation as fact.
 
@@ -90,7 +98,8 @@ public class ContentGeneratorService(
         Include petCareGuide ONLY if isPet is true. Respond with ONLY the JSON, no markdown fences or extra text.
         """;
 
-    public async Task<Guid?> GenerateAnimalAsync(string animalName, bool skipImage = false, CancellationToken ct = default)
+    public async Task<Guid?> GenerateAnimalAsync(string animalName, bool skipImage = false,
+        int? taxonKey = null, string? scientificName = null, CancellationToken ct = default)
     {
         try
         {
@@ -102,36 +111,98 @@ public class ContentGeneratorService(
             if (earlyCheck != null)
                 throw new DuplicateAnimalException(earlyCheck.CommonName, earlyCheck.Slug);
 
-            // Fetch Wikipedia reference material for factual grounding
-            var wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
-            var userPrompt = $"Generate a complete profile for: {animalName}";
-            if (wikiArticle != null)
+            // Fetch GBIF data as PRIMARY source — skip resolution if taxonKey provided
+            GbifAnimalData? gbifData;
+            if (taxonKey.HasValue && scientificName != null)
             {
-                var reference = wikipediaService.FormatAsReference(wikiArticle);
-                userPrompt = $"""
-                    {userPrompt}
-
-                    === REFERENCE MATERIAL (from Wikipedia — use as factual ground truth) ===
-                    {reference}
-                    === END REFERENCE MATERIAL ===
-                    Use the reference material above for verifiable facts (taxonomy, conservation status, habitat, diet, lifespan, etc.). Prefer reference data over your own knowledge when they conflict.
-                    """;
-                logger.LogInformation("Injected Wikipedia reference for {AnimalName} ({Url})", animalName, wikiArticle.Url);
+                logger.LogInformation("Using pre-resolved GBIF taxonKey={TaxonKey} ({ScientificName}) for {AnimalName}",
+                    taxonKey.Value, scientificName, animalName);
+                gbifData = await gbifService.FetchAnimalDataByKeyAsync(taxonKey.Value, scientificName, ct);
             }
             else
             {
-                logger.LogWarning("No Wikipedia article found for {AnimalName}, generating without reference", animalName);
+                gbifData = await gbifService.FetchAnimalDataAsync(animalName, ct);
             }
+            if (gbifData != null)
+                logger.LogInformation("GBIF data fetched for {AnimalName} (taxonKey={TaxonKey})", animalName, gbifData.TaxonKey);
+            else
+                logger.LogWarning("No GBIF data found for {AnimalName}, will use Wikipedia as fallback", animalName);
+
+            // Only fetch Wikipedia if GBIF data is insufficient (missing habitat/diet/taxonomy)
+            var gbifHasSufficientData = gbifData != null && (
+                gbifData.HabitatProse != null || gbifData.DietProse != null || gbifData.Taxonomy != null);
+
+            // TODO: Re-enable Wikipedia content fallback after GBIF testing
+            // WikipediaArticle? wikiArticle = null;
+            // if (!gbifHasSufficientData)
+            // {
+            //     wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+            //     if (wikiArticle != null)
+            //         logger.LogInformation("Wikipedia fallback fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
+            //     else
+            //         logger.LogWarning("No Wikipedia article found for {AnimalName} either", animalName);
+            // }
+            WikipediaArticle? wikiArticle = null;
+            logger.LogInformation("Wikipedia content fallback DISABLED for testing — GBIF only");
+
+            // Build prompt from available data sources
+            var userPrompt = BuildPrompt(animalName, gbifData, wikiArticle);
 
             var response = await aiService.CompleteAsync(SystemPrompt, userPrompt, ct);
 
-            // Strip markdown fences if present
+            // Extract JSON from response — Ollama may wrap it in markdown fences or preamble text
             response = response.Trim();
-            if (response.StartsWith("```")) response = response[response.IndexOf('\n')..];
-            if (response.EndsWith("```")) response = response[..response.LastIndexOf("```")];
-            response = response.Trim();
+            if (response.StartsWith("```"))
+            {
+                response = response[response.IndexOf('\n')..];
+                if (response.Contains("```"))
+                    response = response[..response.LastIndexOf("```")];
+                response = response.Trim();
+            }
 
-            var json = JsonDocument.Parse(response);
+            // If response still doesn't start with '{', try to find the JSON object
+            if (!response.StartsWith('{'))
+            {
+                var jsonStart = response.IndexOf('{');
+                var jsonEnd = response.LastIndexOf('}');
+                if (jsonStart >= 0 && jsonEnd > jsonStart)
+                    response = response[jsonStart..(jsonEnd + 1)];
+            }
+
+            // Try to parse, and if it fails attempt repair
+            JsonDocument json;
+            try
+            {
+                json = JsonDocument.Parse(response);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "Initial JSON parse failed at byte {Position}, attempting repair",
+                    ex.BytePositionInLine);
+
+                // Log a snippet around the error position for diagnostics
+                if (ex.BytePositionInLine is > 0 and < long.MaxValue)
+                {
+                    var pos = (int)ex.BytePositionInLine.Value;
+                    var start = Math.Max(0, pos - 50);
+                    var end = Math.Min(response.Length, pos + 50);
+                    logger.LogWarning("JSON context around error: ...{Snippet}...",
+                        response[start..end]);
+                }
+
+                response = RepairJson(response);
+                try
+                {
+                    json = JsonDocument.Parse(response);
+                    logger.LogInformation("JSON repair succeeded");
+                }
+                catch (JsonException retryEx)
+                {
+                    logger.LogError(retryEx, "JSON repair failed, raw response length={Length}", response.Length);
+                    throw new InvalidOperationException(
+                        $"AI produced invalid JSON that could not be repaired. Error: {retryEx.Message}", retryEx);
+                }
+            }
             var root = json.RootElement;
 
             // Resolve category
@@ -149,7 +220,7 @@ public class ContentGeneratorService(
             if (existing != null)
                 throw new DuplicateAnimalException(existing.CommonName, existing.Slug);
 
-            // Create taxonomy
+            // Create taxonomy — start from AI response, then override with GBIF if available
             var taxElement = root.GetProperty("taxonomy");
             var taxonomy = new Taxonomy
             {
@@ -162,6 +233,22 @@ public class ContentGeneratorService(
                 Species = GetStringOrNull(taxElement, "species"),
                 Subspecies = GetStringOrNull(taxElement, "subspecies"),
             };
+
+            // Override taxonomy with authoritative GBIF data
+            if (gbifData?.Taxonomy != null)
+            {
+                var gbifTax = gbifData.Taxonomy;
+                taxonomy.Kingdom = gbifTax.Kingdom;
+                taxonomy.Phylum = gbifTax.Phylum ?? taxonomy.Phylum;
+                taxonomy.Class = gbifTax.Class ?? taxonomy.Class;
+                taxonomy.TaxOrder = gbifTax.Order ?? taxonomy.TaxOrder;
+                taxonomy.Family = gbifTax.Family ?? taxonomy.Family;
+                taxonomy.Genus = gbifTax.Genus ?? taxonomy.Genus;
+                taxonomy.Species = gbifTax.Species ?? taxonomy.Species;
+                taxonomy.Subspecies = gbifTax.Subspecies ?? taxonomy.Subspecies;
+                logger.LogInformation("Taxonomy overridden with GBIF data for {AnimalName}", animalName);
+            }
+
             var taxonomyId = await taxonomyRepo.CreateAsync(taxonomy);
 
             // Create animal
@@ -190,6 +277,51 @@ public class ContentGeneratorService(
                 GeneratedAt = DateTime.UtcNow,
                 IsPublished = false,
             };
+
+            // Override conservation status with authoritative GBIF IUCN data
+            if (gbifData?.IucnCategory != null)
+            {
+                var mappedStatus = MapIucnCategory(gbifData.IucnCategory);
+                if (mappedStatus != null)
+                {
+                    animal.ConservationStatus = mappedStatus;
+                    logger.LogInformation("Conservation status overridden with GBIF IUCN data: {Status}", mappedStatus);
+                }
+            }
+
+            // Override scientific name with GBIF canonical name if available
+            if (gbifData?.CanonicalName != null)
+                animal.ScientificName = gbifData.CanonicalName;
+
+            // Override native region with GBIF distribution data if available
+            if (gbifData?.NativeCountries.Count > 0)
+            {
+                var region = string.Join(", ", gbifData.NativeCountries.Take(20));
+                // Truncate to fit NativeRegion column (NVARCHAR(500))
+                if (region.Length > 500)
+                    region = region[..region.LastIndexOf(',', 497)] + "...";
+                animal.NativeRegion = region;
+            }
+
+            // Store GBIF identifiers
+            if (gbifData != null)
+            {
+                animal.GbifTaxonKey = gbifData.TaxonKey;
+                animal.GbifCanonicalName = gbifData.CanonicalName;
+            }
+
+            // Store map metadata
+            if (gbifData?.MapMetadata != null)
+            {
+                var map = gbifData.MapMetadata;
+                animal.MapTileUrlTemplate = map.TileUrlTemplate;
+                animal.MapObservationCount = map.ObservationCount;
+                animal.MapMinLat = map.MinLat;
+                animal.MapMaxLat = map.MaxLat;
+                animal.MapMinLng = map.MinLng;
+                animal.MapMaxLng = map.MaxLng;
+            }
+
             var animalId = await animalRepo.CreateAsync(animal);
 
             // Create pet care guide if applicable
@@ -245,8 +377,72 @@ public class ContentGeneratorService(
             var embeddingText = $"{animal.CommonName} {animal.Summary} {animal.Description} {string.Join(" ", funFacts)}";
             await embeddingService.GenerateAndStoreAsync(animalId, embeddingText, aiConfig.EmbeddingModel);
 
-            // Generate image via Stable Diffusion (only if enabled)
-            if (!skipImage && aiConfig.AutoGenerateImages)
+            // Image priority: 1) GBIF CC BY 4.0 (child-safe screened), 2) Wikipedia thumbnail, 3) AI-generated (manual only)
+            var imageSet = false;
+
+            // Priority 1: GBIF image with child-safety screening
+            if (gbifData?.BestImage != null)
+            {
+                var gbifImageUrl = gbifData.BestImage.CachedUrl;
+                logger.LogInformation("Screening GBIF image for {AnimalName}: {ImageUrl}", animalName, gbifImageUrl);
+
+                var isSafe = await imageScreeningService.IsChildSafeAsync(gbifImageUrl, ct);
+                if (isSafe)
+                {
+                    await animalRepo.UpdateImageUrlAsync(animalId, gbifImageUrl);
+                    await animalRepo.UpdateImageAttributionAsync(
+                        animalId,
+                        gbifData.BestImage.License,
+                        gbifData.BestImage.RightsHolder,
+                        gbifData.BestImage.Publisher);
+                    logger.LogInformation("Using GBIF image for {AnimalName}: {ImageUrl} ({License})",
+                        animalName, gbifImageUrl, gbifData.BestImage.License);
+                    imageSet = true;
+                }
+                else
+                {
+                    logger.LogWarning("GBIF image failed child-safety screening for {AnimalName}, trying fallback", animalName);
+                }
+            }
+
+            // Priority 2: Wikipedia thumbnail as fallback
+            if (!imageSet && wikiArticle?.ImageUrl != null)
+            {
+                await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
+                if (wikiArticle.ImageLicense != null)
+                {
+                    await animalRepo.UpdateImageAttributionAsync(
+                        animalId,
+                        wikiArticle.ImageLicense,
+                        null,
+                        wikiArticle.Url);
+                }
+                logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
+                imageSet = true;
+            }
+
+            // Priority 2b: If we didn't fetch Wikipedia earlier but have no image, fetch it now just for the image
+            if (!imageSet && gbifHasSufficientData)
+            {
+                var wikiForImage = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+                if (wikiForImage?.ImageUrl != null)
+                {
+                    await animalRepo.UpdateImageUrlAsync(animalId, wikiForImage.ImageUrl);
+                    if (wikiForImage.ImageLicense != null)
+                    {
+                        await animalRepo.UpdateImageAttributionAsync(
+                            animalId,
+                            wikiForImage.ImageLicense,
+                            null,
+                            wikiForImage.Url);
+                    }
+                    logger.LogInformation("Using Wikipedia image (fallback) for {AnimalName}: {ImageUrl}", animalName, wikiForImage.ImageUrl);
+                    imageSet = true;
+                }
+            }
+
+            // Priority 3: AI-generated via Stable Diffusion (only if enabled and no other image)
+            if (!imageSet && !skipImage && aiConfig.AutoGenerateImages)
             {
                 var imageUrl = await imageService.GenerateAnimalImageAsync(
                     animal.CommonName, animal.Slug, animal.ScientificName,
@@ -254,16 +450,8 @@ public class ContentGeneratorService(
                 if (imageUrl != null)
                 {
                     await animalRepo.UpdateImageUrlAsync(animalId, imageUrl);
-                    logger.LogInformation("Generated image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
+                    logger.LogInformation("Generated AI image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
                 }
-            }
-
-            // Use Wikipedia image as fallback if no AI-generated image
-            var currentAnimal = await animalRepo.GetByIdAsync(animalId);
-            if (currentAnimal?.ImageUrl == null && wikiArticle?.ImageUrl != null)
-            {
-                await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
-                logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
             }
 
             logger.LogInformation("Successfully generated: {AnimalName} (ID: {Id})", animalName, animalId);
@@ -288,7 +476,7 @@ public class ContentGeneratorService(
         await animalRepo.DeleteAsync(existingId);
 
         // Generate a new one
-        var newId = await GenerateAnimalAsync(animalName, false, ct);
+        var newId = await GenerateAnimalAsync(animalName, skipImage: false, ct: ct);
         if (newId == null)
             throw new Exception($"Failed to regenerate {animalName}");
 
@@ -306,7 +494,7 @@ public class ContentGeneratorService(
 
             try
             {
-                var id = await GenerateAnimalAsync(name, false, ct);
+                var id = await GenerateAnimalAsync(name, skipImage: false, ct: ct);
                 results.Add((name, id, id.HasValue ? null : "Generation returned null"));
             }
             catch (Exception ex)
@@ -318,6 +506,122 @@ public class ContentGeneratorService(
         return results;
     }
 
+    private static string BuildPrompt(string animalName, GbifAnimalData? gbif, WikipediaArticle? wiki)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Generate a complete profile for: {animalName}");
+        sb.AppendLine();
+
+        if (gbif != null)
+        {
+            sb.AppendLine("=== PRIMARY DATA (from GBIF — authoritative scientific source) ===");
+
+            if (gbif.Taxonomy != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine("TAXONOMY (use exactly as provided — do not modify):");
+                sb.AppendLine($"  Kingdom: {gbif.Taxonomy.Kingdom}");
+                if (gbif.Taxonomy.Phylum != null) sb.AppendLine($"  Phylum: {gbif.Taxonomy.Phylum}");
+                if (gbif.Taxonomy.Class != null) sb.AppendLine($"  Class: {gbif.Taxonomy.Class}");
+                if (gbif.Taxonomy.Order != null) sb.AppendLine($"  Order: {gbif.Taxonomy.Order}");
+                if (gbif.Taxonomy.Family != null) sb.AppendLine($"  Family: {gbif.Taxonomy.Family}");
+                if (gbif.Taxonomy.Genus != null) sb.AppendLine($"  Genus: {gbif.Taxonomy.Genus}");
+                if (gbif.Taxonomy.Species != null) sb.AppendLine($"  Species: {gbif.Taxonomy.Species}");
+                if (gbif.Taxonomy.Subspecies != null) sb.AppendLine($"  Subspecies: {gbif.Taxonomy.Subspecies}");
+            }
+
+            if (gbif.IucnCategory != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"CONSERVATION STATUS (use exactly as provided — do not modify): {MapIucnCategory(gbif.IucnCategory) ?? gbif.IucnCategory}");
+            }
+
+            if (gbif.NativeCountries.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"NATIVE RANGE: {string.Join(", ", gbif.NativeCountries.Take(15))}");
+            }
+
+            if (gbif.HabitatProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"HABITAT: {gbif.HabitatProse}");
+            }
+
+            if (gbif.DietProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"DIET: {gbif.DietProse}");
+            }
+
+            if (gbif.BehaviourProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"BEHAVIOUR: {gbif.BehaviourProse}");
+            }
+
+            if (gbif.PhysicalDescriptionProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"PHYSICAL DESCRIPTION: {gbif.PhysicalDescriptionProse}");
+            }
+
+            if (gbif.BreedingProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"BREEDING: {gbif.BreedingProse}");
+            }
+
+            if (gbif.ConservationProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"CONSERVATION NOTES: {gbif.ConservationProse}");
+            }
+
+            if (gbif.DistributionProse != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"DISTRIBUTION: {gbif.DistributionProse}");
+            }
+
+            if (gbif.CanonicalName != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"SCIENTIFIC NAME: {gbif.CanonicalName}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("=== END PRIMARY DATA ===");
+        }
+
+        if (wiki != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== SUPPLEMENTARY DATA (from Wikipedia — use to fill gaps not covered by primary data) ===");
+            sb.AppendLine(WikipediaService.FormatAsReference(wiki));
+            sb.AppendLine("=== END SUPPLEMENTARY DATA ===");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Using the data above, write an engaging profile. Include: Summary, Description, FunFacts, Tags, and PetCareGuide (if applicable).");
+        sb.AppendLine("Use the provided taxonomy and conservation status exactly as given. Write prose fields (summary, description, habitat, diet, behaviour) in your own words for a young audience.");
+
+        return sb.ToString();
+    }
+
+    private static string? MapIucnCategory(string gbifCategory) => gbifCategory switch
+    {
+        "LEAST_CONCERN" => "Least Concern",
+        "NEAR_THREATENED" => "Near Threatened",
+        "VULNERABLE" => "Vulnerable",
+        "ENDANGERED" => "Endangered",
+        "CRITICALLY_ENDANGERED" => "Critically Endangered",
+        "EXTINCT_IN_THE_WILD" => "Extinct in the Wild",
+        "EXTINCT" => "Extinct",
+        "DATA_DEFICIENT" => "Data Deficient",
+        _ => null,
+    };
+
     private static string? GetStringOrNull(JsonElement element, string property) =>
         element.TryGetProperty(property, out var val) && val.ValueKind == JsonValueKind.String ? val.GetString() : null;
 
@@ -326,4 +630,166 @@ public class ContentGeneratorService(
 
     private static bool? GetBoolOrNull(JsonElement element, string property) =>
         element.TryGetProperty(property, out var val) && (val.ValueKind == JsonValueKind.True || val.ValueKind == JsonValueKind.False) ? val.GetBoolean() : null;
+
+    /// <summary>
+    /// Attempts to repair common JSON malformations produced by Ollama:
+    /// - Unescaped quotes inside string values
+    /// - Colons where commas are expected (between key-value pairs)
+    /// - Trailing commas before ] or }
+    /// - Control characters inside strings
+    /// </summary>
+    private static string RepairJson(string json)
+    {
+        // Step 1: Fix control characters inside strings (newlines, tabs)
+        json = FixControlCharactersInStrings(json);
+
+        // Step 2: Walk through character by character fixing structural issues
+        var sb = new StringBuilder(json.Length);
+        var inString = false;
+        var escaped = false;
+
+        for (var i = 0; i < json.Length; i++)
+        {
+            var c = json[i];
+
+            if (escaped)
+            {
+                sb.Append(c);
+                escaped = false;
+                continue;
+            }
+
+            if (c == '\\' && inString)
+            {
+                sb.Append(c);
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"' && !escaped)
+            {
+                // Check for unescaped quotes inside strings
+                if (inString)
+                {
+                    // Look ahead: is this the real end of the string?
+                    var afterQuote = SkipWhitespace(json, i + 1);
+                    if (afterQuote < json.Length)
+                    {
+                        var next = json[afterQuote];
+                        // Valid chars after a closing quote: , } ] :
+                        if (next == ',' || next == '}' || next == ']' || next == ':')
+                        {
+                            inString = false;
+                            sb.Append(c);
+                            continue;
+                        }
+
+                        // If next char is another quote (empty string follows or new key),
+                        // this is the real end
+                        if (next == '"')
+                        {
+                            inString = false;
+                            sb.Append(c);
+                            continue;
+                        }
+
+                        // Otherwise this quote is inside the string — escape it
+                        sb.Append('\\');
+                        sb.Append('"');
+                        continue;
+                    }
+                }
+
+                inString = !inString;
+                sb.Append(c);
+                continue;
+            }
+
+            // Fix colon where comma is expected (between values outside strings)
+            if (c == ':' && !inString)
+            {
+                // A colon is valid only after a key (string). Look back to see if previous
+                // non-whitespace token was a closing quote (key) or something else.
+                var beforeColon = SkipWhitespaceBack(sb.ToString(), sb.Length - 1);
+                if (beforeColon >= 0 && sb[beforeColon] == '"')
+                {
+                    // This is a normal key:value separator
+                    sb.Append(c);
+                }
+                else
+                {
+                    // Colon after a value (number, bool, string, array, object) — should be comma
+                    sb.Append(',');
+                }
+                continue;
+            }
+
+            sb.Append(c);
+        }
+
+        var result = sb.ToString();
+
+        // Step 3: Fix trailing commas before } or ]
+        result = Regex.Replace(result, @",\s*([}\]])", "$1");
+
+        return result;
+    }
+
+    private static string FixControlCharactersInStrings(string json)
+    {
+        // Replace unescaped newlines/tabs inside JSON strings
+        var sb = new StringBuilder(json.Length);
+        var inString = false;
+        var escaped = false;
+
+        foreach (var c in json)
+        {
+            if (escaped)
+            {
+                sb.Append(c);
+                escaped = false;
+                continue;
+            }
+
+            if (c == '\\' && inString)
+            {
+                sb.Append(c);
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = !inString;
+                sb.Append(c);
+                continue;
+            }
+
+            if (inString)
+            {
+                switch (c)
+                {
+                    case '\n': sb.Append("\\n"); continue;
+                    case '\r': sb.Append("\\r"); continue;
+                    case '\t': sb.Append("\\t"); continue;
+                }
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
+    }
+
+    private static int SkipWhitespace(string s, int from)
+    {
+        while (from < s.Length && char.IsWhiteSpace(s[from])) from++;
+        return from;
+    }
+
+    private static int SkipWhitespaceBack(string s, int from)
+    {
+        while (from >= 0 && char.IsWhiteSpace(s[from])) from--;
+        return from;
+    }
 }

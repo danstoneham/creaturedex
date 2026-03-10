@@ -66,7 +66,7 @@ public class ContentReviewService(AIService aiService, WikipediaService wikipedi
             wikiReference = $"""
 
                 === REFERENCE MATERIAL (from Wikipedia — use to verify facts) ===
-                {wikipediaService.FormatAsReference(wikiArticle)}
+                {WikipediaService.FormatAsReference(wikiArticle)}
                 === END REFERENCE MATERIAL ===
                 """;
             logger.LogInformation("Injected Wikipedia reference for review of {AnimalName}", animal.CommonName);

@@ -48,6 +48,17 @@ builder.Services.AddHttpClient<ImageGenerationService>(client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5); // Image generation can be slow
 });
+builder.Services.AddHttpClient<GbifMapService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Creaturedex/1.0");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddHttpClient<GbifService>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Creaturedex/1.0");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<ImageScreeningService>();
 builder.Services.AddScoped<AIService>();
 builder.Services.AddScoped<EmbeddingService>();
 builder.Services.AddScoped<ContentGeneratorService>();

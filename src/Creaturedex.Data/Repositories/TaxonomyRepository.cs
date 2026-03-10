@@ -19,8 +19,10 @@ public class TaxonomyRepository(DbConnectionFactory db)
         taxonomy.Id = taxonomy.Id == Guid.Empty ? Guid.NewGuid() : taxonomy.Id;
 
         await conn.ExecuteAsync("""
-            INSERT INTO Taxonomy (Id, Kingdom, Phylum, Class, TaxOrder, Family, Genus, Species, Subspecies)
-            VALUES (@Id, @Kingdom, @Phylum, @Class, @TaxOrder, @Family, @Genus, @Species, @Subspecies)
+            INSERT INTO Taxonomy (Id, Kingdom, Phylum, Class, TaxOrder, Family, Genus, Species, Subspecies,
+                ColTaxonId, Authorship, Synonyms)
+            VALUES (@Id, @Kingdom, @Phylum, @Class, @TaxOrder, @Family, @Genus, @Species, @Subspecies,
+                @ColTaxonId, @Authorship, @Synonyms)
             """, taxonomy);
 
         return taxonomy.Id;

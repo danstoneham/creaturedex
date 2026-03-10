@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ReviewSuggestion } from "@/lib/types";
+import type { Animal, ReviewSuggestion } from "@/lib/types";
 
 const FIELD_LABELS: Record<string, string> = {
   commonName: "Common Name",
@@ -102,9 +102,10 @@ interface ReviewPanelProps {
   onAccept: (suggestion: ReviewSuggestion) => void;
   onDismiss: (index: number) => void;
   onClose: () => void;
+  animal?: Animal;
 }
 
-export default function ReviewPanel({ suggestions, onAccept, onDismiss, onClose }: ReviewPanelProps) {
+export default function ReviewPanel({ suggestions, onAccept, onDismiss, onClose, animal }: ReviewPanelProps) {
   // Group suggestions by field, preserving original indices for onDismiss
   const grouped = new Map<string, { suggestion: ReviewSuggestion; originalIndex: number }[]>();
   suggestions.forEach((s, i) => {
@@ -146,6 +147,25 @@ export default function ReviewPanel({ suggestions, onAccept, onDismiss, onClose 
           Close
         </button>
       </div>
+
+      {/* GBIF data indicator and image attribution */}
+      {animal && (animal.gbifTaxonKey || animal.imageLicense || animal.imageRightsHolder || animal.imageSource) && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 text-xs text-text-muted">
+          {animal.gbifTaxonKey && (
+            <span className="inline-flex items-center gap-1 bg-green-900/40 text-green-300 px-2 py-0.5 rounded-full font-medium">
+              GBIF Verified
+              <span className="text-green-400/60">#{animal.gbifTaxonKey}</span>
+            </span>
+          )}
+          {(animal.imageLicense || animal.imageRightsHolder || animal.imageSource) && (
+            <span className="text-text-muted">
+              {[animal.imageSource, animal.imageRightsHolder, animal.imageLicense]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-blue-800 mb-3">
