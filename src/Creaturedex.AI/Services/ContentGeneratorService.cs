@@ -246,6 +246,22 @@ public class ContentGeneratorService(
                 taxonomy.Genus = gbifTax.Genus ?? taxonomy.Genus;
                 taxonomy.Species = gbifTax.Species ?? taxonomy.Species;
                 taxonomy.Subspecies = gbifTax.Subspecies ?? taxonomy.Subspecies;
+
+                // If GBIF has no order but the AI set order == class, clear it to avoid duplication
+                // (e.g. GBIF treats Squamata as a CLASS with no order level)
+                if (gbifTax.Order == null && taxonomy.TaxOrder != null
+                    && string.Equals(taxonomy.TaxOrder, taxonomy.Class, StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogInformation("Clearing duplicated order={Order} (same as class) for {AnimalName}",
+                        taxonomy.TaxOrder, animalName);
+                    taxonomy.TaxOrder = null;
+                }
+
+                // Store CoL data if available
+                if (gbifTax.ColTaxonId != null) taxonomy.ColTaxonId = gbifTax.ColTaxonId;
+                if (gbifTax.Authorship != null) taxonomy.Authorship = gbifTax.Authorship;
+                if (gbifTax.Synonyms.Count > 0) taxonomy.Synonyms = string.Join("; ", gbifTax.Synonyms);
+
                 logger.LogInformation("Taxonomy overridden with GBIF data for {AnimalName}", animalName);
             }
 

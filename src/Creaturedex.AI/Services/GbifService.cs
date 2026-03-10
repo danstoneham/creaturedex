@@ -98,23 +98,26 @@ public class GbifService(
     {
         var suggestions = new Dictionary<int, GbifSpeciesSuggestion>(); // keyed by taxonKey for dedup
 
+        // Normalize query to Title Case for consistent matching — GBIF vernacular names
+        // are stored in Title Case (e.g. "Siberian Tiger" not "Siberian tiger")
+        var normalizedQuery = System.Globalization.CultureInfo.CurrentCulture.TextInfo
+            .ToTitleCase(query.ToLower());
+
         try
         {
             // Strategy 1: Wikipedia lookup — most reliable for common names like "Tiger", "Elephant"
             // Wikipedia articles always use the correct common name and contain the scientific name.
             // This is the PRIMARY strategy for the 99.9% case where users type common names.
             string? wikiFamily = null;
-            var wikiResult = await TryResolveViaWikipediaAsync(query, ct);
+            var wikiResult = await TryResolveViaWikipediaAsync(normalizedQuery, ct);
             if (wikiResult != null)
             {
                 var (taxonKey, canonicalName) = wikiResult.Value;
                 var detail = await FetchSpeciesDetailAsync(taxonKey, ct);
                 wikiFamily = detail.Family;
 
-                // Use the user's query as the display name — "Bengal Tiger" not "Bagh"
-                // This is what the user typed and what they expect to see
-                var displayName = System.Globalization.CultureInfo.CurrentCulture.TextInfo
-                    .ToTitleCase(query.ToLower());
+                // Use the normalized query as the display name — "Bengal Tiger" not "Bagh"
+                var displayName = normalizedQuery;
 
                 suggestions[taxonKey] = new GbifSpeciesSuggestion
                 {
@@ -129,7 +132,7 @@ public class GbifService(
             }
 
             // Strategy 2: Scientific name match — for users typing "Panthera tigris" directly
-            var matchResult = await TryMatchScientificNameAsync(query, ct);
+            var matchResult = await TryMatchScientificNameAsync(normalizedQuery, ct);
             if (matchResult != null)
             {
                 var (taxonKey, canonicalName) = matchResult.Value;
@@ -154,9 +157,9 @@ public class GbifService(
             // irrelevant noise (tiger scallops, tiger frogs, etc.)
             if (wikiResult == null)
             {
-                await CollectVernacularSuggestionsAsync(query, suggestions, ct);
+                await CollectVernacularSuggestionsAsync(normalizedQuery, suggestions, ct);
 
-                var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var words = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (words.Length >= 2)
                 {
                     var baseName = words[^1];
@@ -463,15 +466,47 @@ public class GbifService(
             var textToSearch = article.TaxonomyInfo ?? article.Summary;
             if (textToSearch == null) return null;
 
-            // Try to find a binomial name pattern: two capitalised-then-lowercase words
-            // that looks like "Genus species" (e.g., "Panthera tigris", "Anas platyrhynchos")
-            var binomialMatch = System.Text.RegularExpressions.Regex.Match(
+            // Try to find a binomial name pattern: "Genus species" (e.g., "Panthera tigris")
+            // Scientific names in text are typically italicised or in parentheses, but in
+            // plaintext they appear as "Genus species" — we need to skip common-name pairs
+            // like "Siberian tiger" or "Amur tiger" that also match [A-Z][a-z]+ [a-z]+.
+            // Strategy: collect ALL matches, then prefer ones that look like real Latin binomials
+            // (not English words). Real genera rarely match common English words.
+            var matches = System.Text.RegularExpressions.Regex.Matches(
                 textToSearch,
                 @"\b([A-Z][a-z]+)\s+([a-z]{2,})\b");
 
-            if (!binomialMatch.Success) return null;
+            if (matches.Count == 0) return null;
 
-            var scientificName = binomialMatch.Value;
+            // Common English words that appear as first word in "Adjective noun" patterns
+            // but are NOT valid genera — skip these as likely common names
+            var commonEnglishFirstWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "The", "This", "That", "These", "Those", "Some", "Many", "Most", "Several",
+                "All", "Any", "Each", "Every", "Both", "Few", "Other", "Such", "More",
+                "African", "American", "Asian", "Australian", "European", "Arctic", "Antarctic",
+                "Northern", "Southern", "Eastern", "Western", "Central", "Greater", "Lesser",
+                "Giant", "Common", "Golden", "Great", "Little", "Long", "Short", "Red", "Blue",
+                "Green", "Black", "White", "Brown", "Grey", "Gray", "Yellow", "Wild", "Royal",
+                "Indian", "Chinese", "Japanese", "Siberian", "Bengal", "Amur", "Nile",
+                "Pacific", "Atlantic", "Mediterranean", "Himalayan", "Andean", "Amazonian",
+                "It", "Its", "They", "Their", "There", "Here", "Where", "When", "While",
+                "One", "Two", "Three", "Four", "Five", "First", "Second", "Third",
+            };
+
+            string? scientificName = null;
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                var genus = m.Groups[1].Value;
+                if (!commonEnglishFirstWords.Contains(genus))
+                {
+                    scientificName = m.Value;
+                    break;
+                }
+            }
+
+            // Fall back to first match if no non-English match found
+            scientificName ??= matches[0].Value;
             logger.LogDebug("Wikipedia resolved {Name} → scientific name candidate: {Scientific}", name, scientificName);
 
             // Now look up this scientific name in GBIF
@@ -694,16 +729,27 @@ public class GbifService(
                 if (col.TryGetProperty("result", out var results) && results.GetArrayLength() > 0)
                 {
                     var first = results[0];
-                    colTaxonId = first.TryGetProperty("id", out var id) ? id.GetString() : null;
 
-                    if (first.TryGetProperty("name", out var nameObj)
+                    // COL API nests data under "usage" — the top-level "id" is a search result ID
+                    var usageNode = first.TryGetProperty("usage", out var usage) ? usage : first;
+
+                    colTaxonId = usageNode.TryGetProperty("id", out var id) ? id.GetString() : null;
+
+                    // Authorship is under usage.name.authorship
+                    if (usageNode.TryGetProperty("name", out var nameObj)
                         && nameObj.TryGetProperty("authorship", out var auth))
                         authorship = auth.GetString();
 
-                    // Collect synonyms from COL
-                    if (first.TryGetProperty("synonyms", out var syns))
+                    // Fallback: top-level id if usage didn't have one
+                    colTaxonId ??= first.TryGetProperty("id", out var topId) ? topId.GetString() : null;
+
+                    // Collect synonyms from COL (may be at top level or under usage)
+                    var synsSource = first.TryGetProperty("synonyms", out var syns) ? syns
+                        : usageNode.TryGetProperty("synonyms", out var usyns) ? usyns
+                        : (JsonElement?)null;
+                    if (synsSource.HasValue)
                     {
-                        foreach (var syn in syns.EnumerateArray())
+                        foreach (var syn in synsSource.Value.EnumerateArray())
                         {
                             var synName = syn.TryGetProperty("label", out var lbl) ? lbl.GetString() : null;
                             if (synName != null) synonyms.Add(synName);
@@ -715,6 +761,43 @@ public class GbifService(
             {
                 logger.LogWarning(ex, "COL lookup failed for {CanonicalName}, continuing with GBIF taxonomy only",
                     canonicalName);
+            }
+
+            // GBIF backbone sometimes places orders at the class level (e.g. Squamata as CLASS
+            // instead of CLASS=Reptilia, ORDER=Squamata). When class is set but order is null,
+            // check if the "class" is actually an order by looking at its rank in GBIF.
+            if (@class != null && order == null)
+            {
+                try
+                {
+                    var classKeyProp = gbif.TryGetProperty("classKey", out var ck) ? (int?)ck.GetInt32() : null;
+                    if (classKeyProp.HasValue)
+                    {
+                        var classSpecies = await GetJsonAsync($"{GbifApiBase}/species/{classKeyProp.Value}", ct);
+                        var classRank = classSpecies.TryGetProperty("rank", out var cr) ? cr.GetString() : null;
+
+                        // If GBIF says this "class" is actually ranked as ORDER, fix it
+                        if (classRank == "ORDER")
+                        {
+                            order = @class;
+                            // Look up the real class from the parent
+                            var classParentKey = classSpecies.TryGetProperty("parentKey", out var cpk) ? (int?)cpk.GetInt32() : null;
+                            if (classParentKey.HasValue)
+                            {
+                                var parentSpecies = await GetJsonAsync($"{GbifApiBase}/species/{classParentKey.Value}", ct);
+                                var parentRank = parentSpecies.TryGetProperty("rank", out var pr) ? pr.GetString() : null;
+                                if (parentRank == "CLASS")
+                                    @class = parentSpecies.TryGetProperty("canonicalName", out var pcn) ? pcn.GetString() : @class;
+                            }
+                            logger.LogInformation("Fixed taxonomy: class={Class}, order={Order} (was class={OrigClass}, order=null)",
+                                @class, order, order);
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogDebug(ex, "Taxonomy rank check failed, using GBIF values as-is");
+                }
             }
 
             return new GbifTaxonomyData
@@ -835,22 +918,35 @@ public class GbifService(
 
             if (!json.TryGetProperty("results", out var results)) return regions;
 
+            // Overly broad or non-specific locality values to filter out
+            var broadLocalities = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Global", "Worldwide", "Cosmopolitan", "Pantropical", "Circumtropical",
+                "Unknown", "Various", "Multiple"
+            };
+
             foreach (var item in results.EnumerateArray())
             {
                 // Prefer country over locality — localities are often granular municipalities
                 // which produce very long strings unsuitable for a children's encyclopedia
                 var country = item.TryGetProperty("country", out var ctr) ? ctr.GetString() : null;
                 var locality = item.TryGetProperty("locality", out var loc) ? loc.GetString() : null;
-                var status = item.TryGetProperty("establishmentMeans", out var es) ? es.GetString() : null;
+                var means = item.TryGetProperty("establishmentMeans", out var es) ? es.GetString() : null;
 
                 // Only include native/naturalised ranges, skip introduced
-                if (status is "INTRODUCED" or "INVASIVE") continue;
+                if (means is "INTRODUCED" or "INVASIVE") continue;
 
-                // Use country if available; only fall back to locality if it looks like a
-                // broad region name (not a municipality — skip entries with pipe-separated lists)
-                var region = country;
-                if (region == null && locality != null && !locality.Contains('|'))
+                // Use country code if available
+                string? region = null;
+                if (country != null)
+                {
+                    region = country;
+                }
+                else if (locality != null && !locality.Contains('|') && !broadLocalities.Contains(locality))
+                {
+                    // Fall back to locality only if it's a specific region name
                     region = locality;
+                }
 
                 if (region != null && !regions.Contains(region))
                     regions.Add(region);
@@ -900,7 +996,7 @@ public class GbifService(
 
         foreach (var occ in results.EnumerateArray())
         {
-            var gbifId = occ.TryGetProperty("key", out var k) ? (int?)k.GetInt32() : null;
+            var gbifId = occ.TryGetProperty("key", out var k) ? (long?)k.GetInt64() : null;
             var mediaArray = occ.TryGetProperty("media", out var media) ? media : (JsonElement?)null;
 
             if (mediaArray == null || gbifId == null) continue;

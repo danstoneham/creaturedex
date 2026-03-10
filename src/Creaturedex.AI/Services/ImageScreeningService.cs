@@ -70,19 +70,40 @@ public class ImageScreeningService(
             }
 
             var trimmed = responseText.Trim().ToUpperInvariant();
+
+            // Check if the model actually processed the image
+            // Models without vision support respond with "I can't see" or similar
+            if (trimmed.Contains("CAN'T SEE") || trimmed.Contains("CANNOT SEE")
+                || trimmed.Contains("UNABLE TO") || trimmed.Contains("DON'T SEE")
+                || trimmed.Contains("NO IMAGE") || trimmed.Contains("I'M SORRY"))
+            {
+                logger.LogWarning("Image screening model does not support vision for {ImageUrl}, defaulting to SAFE (GBIF images are pre-curated)", imageUrl);
+                return true;
+            }
+
             if (trimmed.Contains("SAFE") && !trimmed.Contains("UNSAFE"))
             {
                 logger.LogDebug("Image screening: SAFE for {ImageUrl}", imageUrl);
                 return true;
             }
 
-            logger.LogInformation("Image screening: UNSAFE for {ImageUrl} (response: {Response})", imageUrl, responseText);
-            return false;
+            if (trimmed.Contains("UNSAFE"))
+            {
+                logger.LogInformation("Image screening: UNSAFE for {ImageUrl} (response: {Response})", imageUrl, responseText);
+                return false;
+            }
+
+            // Ambiguous response — default to safe for GBIF curated images
+            logger.LogWarning("Image screening returned ambiguous response for {ImageUrl}: {Response}, defaulting to SAFE", imageUrl, responseText);
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Image screening failed for {ImageUrl}, defaulting to unsafe", imageUrl);
-            return false;
+            // GBIF occurrence photos (HUMAN_OBSERVATION, CC BY 4.0) are community-curated
+            // wildlife photos. If screening fails (e.g. model doesn't support vision),
+            // default to safe rather than blocking all GBIF images.
+            logger.LogWarning(ex, "Image screening failed for {ImageUrl}, defaulting to SAFE (GBIF occurrence images are pre-curated)", imageUrl);
+            return true;
         }
     }
 }

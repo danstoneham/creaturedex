@@ -53,7 +53,7 @@ public record GbifImageResult
     public string? RightsHolder { get; init; }
     public string? Publisher { get; init; }
     public string? Country { get; init; }
-    public int? GbifOccurrenceId { get; init; }
+    public long? GbifOccurrenceId { get; init; }
     public string? MediaIdentifierMd5 { get; init; }
     public string CachedUrl => MediaIdentifierMd5 != null && GbifOccurrenceId != null
         ? $"https://api.gbif.org/v1/image/cache/occurrence/{GbifOccurrenceId}/media/{MediaIdentifierMd5}"
