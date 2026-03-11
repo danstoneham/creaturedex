@@ -66,6 +66,7 @@ builder.Services.AddScoped<ContentGeneratorService>();
 builder.Services.AddScoped<ContentReviewService>();
 builder.Services.AddScoped<SemanticSearchService>();
 builder.Services.AddScoped<MatcherAIService>();
+builder.Services.AddScoped<ContentSummariser>();
 
 // Services
 builder.Services.AddScoped<AnimalService>();
