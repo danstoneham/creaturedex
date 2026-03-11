@@ -1004,17 +1004,18 @@ public class GbifService(
 
             if (!json.TryGetProperty("results", out var results)) return regions;
 
-            // Overly broad or non-specific locality values to filter out
+            // Overly broad, non-specific, or technical locality values to filter out
             var broadLocalities = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "Global", "Worldwide", "Cosmopolitan", "Pantropical", "Circumtropical",
                 "Unknown", "Various", "Multiple"
             };
 
+            // Patterns to skip: OSPAR regions, technical ocean zones, etc.
+            var skipPatterns = new[] { "OSPAR", "FAO", "ICES", "EEZ" };
+
             foreach (var item in results.EnumerateArray())
             {
-                // Prefer country over locality — localities are often granular municipalities
-                // which produce very long strings unsuitable for a children's encyclopedia
                 var country = item.TryGetProperty("country", out var ctr) ? ctr.GetString() : null;
                 var locality = item.TryGetProperty("locality", out var loc) ? loc.GetString() : null;
                 var means = item.TryGetProperty("establishmentMeans", out var es) ? es.GetString() : null;
@@ -1022,16 +1023,23 @@ public class GbifService(
                 // Only include native/naturalised ranges, skip introduced
                 if (means is "INTRODUCED" or "INVASIVE") continue;
 
-                // Use country code if available
                 string? region = null;
                 if (country != null)
                 {
                     region = country;
                 }
-                else if (locality != null && !locality.Contains('|') && !broadLocalities.Contains(locality))
+                else if (locality != null)
                 {
-                    // Fall back to locality only if it's a specific region name
-                    region = locality;
+                    // Skip subnational code lists (e.g. "BR-AL;BR-AP;BR-BA;...")
+                    if (locality.Contains(';') || locality.Contains('|')) continue;
+                    // Skip overly broad/generic localities
+                    if (broadLocalities.Contains(locality.TrimEnd(',', ' '))) continue;
+                    // Skip entries with ISO-like subnational codes (e.g. "BR-AL")
+                    if (System.Text.RegularExpressions.Regex.IsMatch(locality, @"^[A-Z]{2}-[A-Z]{1,3}$")) continue;
+                    // Skip technical/regulatory zone names (OSPAR, FAO, etc.)
+                    if (skipPatterns.Any(p => locality.Contains(p, StringComparison.OrdinalIgnoreCase))) continue;
+                    // Clean trailing punctuation from source data
+                    region = locality.TrimEnd(',', ' ', '.');
                 }
 
                 if (region != null && !regions.Contains(region))

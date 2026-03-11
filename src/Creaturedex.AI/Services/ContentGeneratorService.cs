@@ -35,11 +35,13 @@ public class ContentGeneratorService(
         You are a skilled science writer for Creaturedex, a children's animal encyclopedia.
         Your audience is 8–16 year olds. Write with warmth, enthusiasm, and clear language.
         IMPORTANT: All factual data has been pre-filled from authoritative scientific sources.
-        Your job is ONLY to write engaging prose using the provided data.
+        Your job is ONLY to summarise and rephrase the provided data in an engaging way.
+        DO NOT invent or fabricate any numerical data (weights, lengths, speeds, populations, dates).
         DO NOT invent taxonomy — use exactly what is provided.
         DO NOT change conservation status — use exactly what is provided.
+        For characteristics (Weight, Length, Speed, etc.): ONLY include values explicitly stated in the provided data. If the source data does not mention a specific measurement, omit that characteristic entirely rather than guessing.
 
-        When uncertain about specific numbers, provide ranges rather than guessing. Flag genuine uncertainty rather than presenting speculation as fact.
+        When uncertain about specific numbers, OMIT them rather than guessing. Never present fabricated numbers as fact.
 
         For fun facts: stick to well-known, easily verifiable facts. NEVER invent specific dates, names, or historical events. Prefer fascinating biological/behavioural facts over historical anecdotes.
 
@@ -128,22 +130,17 @@ public class ContentGeneratorService(
             else
                 logger.LogWarning("No GBIF data found for {AnimalName}, will use Wikipedia as fallback", animalName);
 
-            // Only fetch Wikipedia if GBIF data is insufficient (missing habitat/diet/taxonomy)
             var gbifHasSufficientData = gbifData != null && (
                 gbifData.HabitatProse != null || gbifData.DietProse != null || gbifData.Taxonomy != null);
-
-            // Fetch Wikipedia if GBIF data is insufficient OR if GBIF IUCN needs verification
-            WikipediaArticle? wikiArticle = null;
             var gbifIucnMissing = gbifData?.IucnCategory == null
                 || MapIucnCategory(gbifData.IucnCategory) == null;
             var gbifIucnFromSynonym = gbifData?.IucnFromSynonymFallback == true;
 
-            if (!gbifHasSufficientData || gbifIucnMissing || gbifIucnFromSynonym)
-            {
-                wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
-                if (wikiArticle != null)
-                    logger.LogInformation("Wikipedia fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
-            }
+            // Always fetch Wikipedia — it provides supplementary data (physical descriptions,
+            // verified measurements) that keeps the AI from fabricating numbers
+            WikipediaArticle? wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+            if (wikiArticle != null)
+                logger.LogInformation("Wikipedia fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
 
             // If GBIF has no direct IUCN (missing or from synonym fallback), try Wikipedia infobox
             // Wikipedia infoboxes have subspecies-level IUCN assessments that GBIF doesn't expose
@@ -332,7 +329,10 @@ public class ContentGeneratorService(
             // Override native region with GBIF distribution data if available
             if (gbifData?.NativeCountries.Count > 0)
             {
-                var region = string.Join(", ", gbifData.NativeCountries.Take(20));
+                // Cap at 10 regions to keep it readable for a children's encyclopedia
+                var region = string.Join(", ", gbifData.NativeCountries.Take(10));
+                if (gbifData.NativeCountries.Count > 10)
+                    region += " and others";
                 // Truncate to fit NativeRegion column (NVARCHAR(500))
                 if (region.Length > 500)
                     region = region[..region.LastIndexOf(',', 497)] + "...";
