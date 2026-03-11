@@ -67,6 +67,17 @@ public class AdminController(
         }
     }
 
+    [HttpDelete("animals/{id:guid}")]
+    public async Task<IActionResult> DeleteAnimal(Guid id)
+    {
+        var animal = await animalService.GetByIdAsync(id);
+        if (animal == null)
+            return NotFound(new { error = "Animal not found" });
+
+        await animalService.DeleteAsync(id);
+        return Ok(new { message = $"Deleted {animal.CommonName}" });
+    }
+
     [HttpPost("generate/batch")]
     public async Task<IActionResult> GenerateBatch([FromBody] BatchGenerateRequest request, CancellationToken ct)
     {

@@ -122,6 +122,10 @@ export const api = {
       fetchApi<{ id: string; slug: string; message: string }>(`/api/admin/animals/${id}/regenerate`, {
         method: "POST",
       }),
+    deleteAnimal: (id: string) =>
+      fetchApi<{ message: string }>(`/api/admin/animals/${id}`, {
+        method: "DELETE",
+      }),
     publishAnimal: (id: string) =>
       fetchApi<{ message: string }>(`/api/admin/publish/${id}`, {
         method: "PUT",

@@ -132,21 +132,34 @@ public class ContentGeneratorService(
             var gbifHasSufficientData = gbifData != null && (
                 gbifData.HabitatProse != null || gbifData.DietProse != null || gbifData.Taxonomy != null);
 
-            // TODO: Re-enable Wikipedia content fallback after GBIF testing
-            // WikipediaArticle? wikiArticle = null;
-            // if (!gbifHasSufficientData)
-            // {
-            //     wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
-            //     if (wikiArticle != null)
-            //         logger.LogInformation("Wikipedia fallback fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
-            //     else
-            //         logger.LogWarning("No Wikipedia article found for {AnimalName} either", animalName);
-            // }
+            // Fetch Wikipedia if GBIF data is insufficient OR if GBIF IUCN needs verification
             WikipediaArticle? wikiArticle = null;
-            logger.LogInformation("Wikipedia content fallback DISABLED for testing — GBIF only");
+            var gbifIucnMissing = gbifData?.IucnCategory == null
+                || MapIucnCategory(gbifData.IucnCategory) == null;
+            var gbifIucnFromSynonym = gbifData?.IucnFromSynonymFallback == true;
+
+            if (!gbifHasSufficientData || gbifIucnMissing || gbifIucnFromSynonym)
+            {
+                wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+                if (wikiArticle != null)
+                    logger.LogInformation("Wikipedia fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
+            }
+
+            // If GBIF has no direct IUCN (missing or from synonym fallback), try Wikipedia infobox
+            // Wikipedia infoboxes have subspecies-level IUCN assessments that GBIF doesn't expose
+            string? wikiIucnStatus = null;
+            if (gbifIucnMissing || gbifIucnFromSynonym)
+            {
+                wikiIucnStatus = await wikipediaService.GetIucnStatusFromInfoboxAsync(animalName, ct);
+                if (wikiIucnStatus != null)
+                    logger.LogInformation("IUCN status from Wikipedia infobox: {Status} (GBIF was {GbifStatus}{Fallback})",
+                        wikiIucnStatus,
+                        gbifData?.IucnCategory ?? "null",
+                        gbifIucnFromSynonym ? " via synonym fallback" : "");
+            }
 
             // Build prompt from available data sources
-            var userPrompt = BuildPrompt(animalName, gbifData, wikiArticle);
+            var userPrompt = BuildPrompt(animalName, gbifData, wikiArticle, wikiIucnStatus);
 
             var response = await aiService.CompleteAsync(SystemPrompt, userPrompt, ct);
 
@@ -221,18 +234,18 @@ public class ContentGeneratorService(
                 throw new DuplicateAnimalException(existing.CommonName, existing.Slug);
 
             // Create taxonomy — start from AI response, then override with GBIF if available
-            var taxElement = root.GetProperty("taxonomy");
-            var taxonomy = new Taxonomy
+            var taxonomy = new Taxonomy { Kingdom = "Animalia" };
+            if (root.TryGetProperty("taxonomy", out var taxElement))
             {
-                Kingdom = taxElement.GetProperty("kingdom").GetString() ?? "Animalia",
-                Phylum = GetStringOrNull(taxElement, "phylum"),
-                Class = GetStringOrNull(taxElement, "class"),
-                TaxOrder = GetStringOrNull(taxElement, "order"),
-                Family = GetStringOrNull(taxElement, "family"),
-                Genus = GetStringOrNull(taxElement, "genus"),
-                Species = GetStringOrNull(taxElement, "species"),
-                Subspecies = GetStringOrNull(taxElement, "subspecies"),
-            };
+                taxonomy.Kingdom = GetStringOrNull(taxElement, "kingdom") ?? "Animalia";
+                taxonomy.Phylum = GetStringOrNull(taxElement, "phylum");
+                taxonomy.Class = GetStringOrNull(taxElement, "class");
+                taxonomy.TaxOrder = GetStringOrNull(taxElement, "order");
+                taxonomy.Family = GetStringOrNull(taxElement, "family");
+                taxonomy.Genus = GetStringOrNull(taxElement, "genus");
+                taxonomy.Species = GetStringOrNull(taxElement, "species");
+                taxonomy.Subspecies = GetStringOrNull(taxElement, "subspecies");
+            }
 
             // Override taxonomy with authoritative GBIF data
             if (gbifData?.Taxonomy != null)
@@ -294,14 +307,21 @@ public class ContentGeneratorService(
                 IsPublished = false,
             };
 
-            // Override conservation status with authoritative GBIF IUCN data
-            if (gbifData?.IucnCategory != null)
+            // Override conservation status — priority: Wikipedia infobox > GBIF direct > GBIF synonym fallback
+            // Wikipedia infoboxes have subspecies-level IUCN data that GBIF doesn't expose
+            if (wikiIucnStatus != null)
             {
-                var mappedStatus = MapIucnCategory(gbifData.IucnCategory);
-                if (mappedStatus != null)
+                animal.ConservationStatus = wikiIucnStatus;
+                logger.LogInformation("Conservation status set from Wikipedia infobox: {Status}", wikiIucnStatus);
+            }
+            else if (gbifData?.IucnCategory != null)
+            {
+                var mappedGbifStatus = MapIucnCategory(gbifData.IucnCategory);
+                if (mappedGbifStatus != null)
                 {
-                    animal.ConservationStatus = mappedStatus;
-                    logger.LogInformation("Conservation status overridden with GBIF IUCN data: {Status}", mappedStatus);
+                    animal.ConservationStatus = mappedGbifStatus;
+                    logger.LogInformation("Conservation status set from GBIF: {Status}{Fallback}",
+                        mappedGbifStatus, gbifIucnFromSynonym ? " (via synonym fallback)" : "");
                 }
             }
 
@@ -522,7 +542,7 @@ public class ContentGeneratorService(
         return results;
     }
 
-    private static string BuildPrompt(string animalName, GbifAnimalData? gbif, WikipediaArticle? wiki)
+    private static string BuildPrompt(string animalName, GbifAnimalData? gbif, WikipediaArticle? wiki, string? wikiIucnOverride = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Generate a complete profile for: {animalName}");
@@ -546,10 +566,13 @@ public class ContentGeneratorService(
                 if (gbif.Taxonomy.Subspecies != null) sb.AppendLine($"  Subspecies: {gbif.Taxonomy.Subspecies}");
             }
 
-            if (gbif.IucnCategory != null)
+            var mappedIucn = gbif.IucnCategory != null ? MapIucnCategory(gbif.IucnCategory) : null;
+            // Use Wikipedia-extracted IUCN as fallback when GBIF has no status
+            var effectiveIucn = mappedIucn ?? wikiIucnOverride;
+            if (effectiveIucn != null)
             {
                 sb.AppendLine();
-                sb.AppendLine($"CONSERVATION STATUS (use exactly as provided — do not modify): {MapIucnCategory(gbif.IucnCategory) ?? gbif.IucnCategory}");
+                sb.AppendLine($"CONSERVATION STATUS (use exactly as provided — do not modify): {effectiveIucn}");
             }
 
             if (gbif.NativeCountries.Count > 0)
@@ -625,16 +648,49 @@ public class ContentGeneratorService(
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Extracts IUCN conservation status from Wikipedia text (conservation section or summary).
+    /// Wikipedia often has subspecies-level IUCN assessments that GBIF doesn't expose.
+    /// </summary>
+    internal static string? ExtractIucnFromWikipediaText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // Match phrases like "listed as Endangered", "classified as Critically Endangered",
+        // "conservation status: Vulnerable", "IUCN Red List as Endangered", etc.
+        // Order matters — check longer phrases first to avoid partial matches
+        var statusKeywords = new (string Pattern, string Status)[]
+        {
+            ("Critically Endangered", "Critically Endangered"),
+            ("Extinct in the Wild", "Extinct in the Wild"),
+            ("Near Threatened", "Near Threatened"),
+            ("Least Concern", "Least Concern"),
+            ("Data Deficient", "Data Deficient"),
+            ("Endangered", "Endangered"),
+            ("Vulnerable", "Vulnerable"),
+            ("Extinct", "Extinct"),
+        };
+
+        foreach (var (pattern, status) in statusKeywords)
+        {
+            if (text.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                return status;
+        }
+
+        return null;
+    }
+
     private static string? MapIucnCategory(string gbifCategory) => gbifCategory switch
     {
-        "LEAST_CONCERN" => "Least Concern",
-        "NEAR_THREATENED" => "Near Threatened",
-        "VULNERABLE" => "Vulnerable",
-        "ENDANGERED" => "Endangered",
-        "CRITICALLY_ENDANGERED" => "Critically Endangered",
-        "EXTINCT_IN_THE_WILD" => "Extinct in the Wild",
-        "EXTINCT" => "Extinct",
-        "DATA_DEFICIENT" => "Data Deficient",
+        "LEAST_CONCERN" or "LC" => "Least Concern",
+        "NEAR_THREATENED" or "NT" => "Near Threatened",
+        "VULNERABLE" or "VU" => "Vulnerable",
+        "ENDANGERED" or "EN" => "Endangered",
+        "CRITICALLY_ENDANGERED" or "CR" => "Critically Endangered",
+        "EXTINCT_IN_THE_WILD" or "EW" => "Extinct in the Wild",
+        "EXTINCT" or "EX" => "Extinct",
+        "DATA_DEFICIENT" or "DD" => "Data Deficient",
+        "NOT_EVALUATED" or "NE" => null, // Explicitly return null — don't pass to AI
         _ => null,
     };
 

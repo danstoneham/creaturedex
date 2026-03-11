@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -68,6 +69,75 @@ public class WikipediaService(HttpClient httpClient, IMemoryCache cache, ILogger
         cache.Set(cacheKey, article, CacheDuration);
         return article;
     }
+
+    /// <summary>
+    /// Fetches the IUCN conservation status from the Wikipedia infobox (Speciesbox/Taxobox).
+    /// The infobox wikitext contains "| status = EN" which maps to IUCN codes.
+    /// This is more reliable than parsing article prose, as the infobox is structured data.
+    /// </summary>
+    public async Task<string?> GetIucnStatusFromInfoboxAsync(string animalName, CancellationToken ct = default)
+    {
+        try
+        {
+            // Try the exact title first, then with "(animal)" suffix
+            var status = await FetchInfoboxStatusAsync(animalName, ct);
+            if (status == null)
+                status = await FetchInfoboxStatusAsync($"{animalName} (animal)", ct);
+
+            if (status != null)
+            {
+                var mapped = MapInfoboxStatus(status);
+                if (mapped != null)
+                    logger.LogInformation("Wikipedia infobox IUCN status for {AnimalName}: {Code} -> {Status}",
+                        animalName, status, mapped);
+                return mapped;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "Failed to fetch Wikipedia infobox IUCN for {AnimalName}", animalName);
+        }
+
+        return null;
+    }
+
+    private async Task<string?> FetchInfoboxStatusAsync(string title, CancellationToken ct)
+    {
+        var encodedTitle = Uri.EscapeDataString(title.Replace(' ', '_'));
+        var url = $"{QueryApiBase}?action=parse&page={encodedTitle}&prop=wikitext&section=0&format=json&redirects";
+        var response = await httpClient.GetAsync(url, ct);
+
+        if (!response.IsSuccessStatusCode) return null;
+
+        var json = await JsonSerializer.DeserializeAsync<JsonElement>(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+
+        if (!json.TryGetProperty("parse", out var parse)
+            || !parse.TryGetProperty("wikitext", out var wikitext)
+            || !wikitext.TryGetProperty("*", out var text))
+            return null;
+
+        var wikitextStr = text.GetString();
+        if (wikitextStr == null) return null;
+
+        // Match "| status = XX" in the infobox (standard Speciesbox/Taxobox format)
+        var match = Regex.Match(wikitextStr, @"\|\s*status\s*=\s*(\w+)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.Trim().ToUpperInvariant() : null;
+    }
+
+    private static string? MapInfoboxStatus(string code) => code switch
+    {
+        "EX" => "Extinct",
+        "EW" => "Extinct in the Wild",
+        "CR" => "Critically Endangered",
+        "EN" => "Endangered",
+        "VU" => "Vulnerable",
+        "NT" => "Near Threatened",
+        "LC" => "Least Concern",
+        "DD" => "Data Deficient",
+        "NE" => null, // Not Evaluated — don't use
+        _ => null,
+    };
 
     public static string FormatAsReference(WikipediaArticle article)
     {

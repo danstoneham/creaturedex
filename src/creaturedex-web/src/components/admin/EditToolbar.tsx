@@ -8,6 +8,7 @@ interface EditToolbarProps {
   isReviewing: boolean;
   isFetchingWikiImage?: boolean;
   isRegenerating?: boolean;
+  isDeleting?: boolean;
   onToggleEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
@@ -15,15 +16,16 @@ interface EditToolbarProps {
   onUploadImage: () => void;
   onFetchWikipediaImage?: () => void;
   onRegenerate?: () => void;
+  onDelete?: () => void;
   onReview: () => void;
   onTogglePublish: () => void;
 }
 
 export default function EditToolbar({
   isEditing, isPublished, isSaving, isGeneratingImage, isReviewing,
-  isFetchingWikiImage, isRegenerating,
+  isFetchingWikiImage, isRegenerating, isDeleting,
   onToggleEdit, onSave, onCancel, onGenerateImage, onUploadImage,
-  onFetchWikipediaImage, onRegenerate,
+  onFetchWikipediaImage, onRegenerate, onDelete,
   onReview, onTogglePublish,
 }: EditToolbarProps) {
   return (
@@ -96,6 +98,15 @@ export default function EditToolbar({
             className="bg-orange-900/40 text-orange-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-900/60 disabled:opacity-50"
           >
             {isRegenerating ? "Regenerating..." : "Regenerate"}
+          </button>
+        )}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="bg-red-900/40 text-red-300 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-red-900/60 disabled:opacity-50"
+          >
+            {isDeleting ? "Deleting..." : "Delete"}
           </button>
         )}
         <button

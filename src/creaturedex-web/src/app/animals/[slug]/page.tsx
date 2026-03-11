@@ -32,6 +32,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
   const [isReviewing, setIsReviewing] = useState(false);
   const [isFetchingWikiImage, setIsFetchingWikiImage] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [reviewSuggestions, setReviewSuggestions] = useState<ReviewSuggestion[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -161,6 +162,20 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
       console.error("Failed to regenerate:", err);
       alert("Failed to regenerate animal");
       setIsRegenerating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!profile) return;
+    if (!window.confirm(`Permanently delete "${profile.animal.commonName}"? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      await api.admin.deleteAnimal(profile.animal.id);
+      window.location.href = "/animals";
+    } catch (err) {
+      console.error("Failed to delete:", err);
+      alert("Failed to delete animal");
+      setIsDeleting(false);
     }
   };
 
@@ -472,6 +487,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           isReviewing={isReviewing}
           isFetchingWikiImage={isFetchingWikiImage}
           isRegenerating={isRegenerating}
+          isDeleting={isDeleting}
           onToggleEdit={handleEdit}
           onSave={handleSave}
           onCancel={handleCancel}
@@ -479,6 +495,7 @@ export default function AnimalProfilePage({ params }: { params: Promise<{ slug: 
           onUploadImage={handleUploadImage}
           onFetchWikipediaImage={handleFetchWikipediaImage}
           onRegenerate={handleRegenerate}
+          onDelete={handleDelete}
           onReview={handleReview}
           onTogglePublish={handleTogglePublish}
         />

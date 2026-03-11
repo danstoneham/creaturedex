@@ -84,6 +84,7 @@ public class GbifService(
             IucnCategory = iucn.Category,
             IucnCode = iucn.Code,
             IucnTaxonId = iucn.IucnTaxonId,
+            IucnFromSynonymFallback = iucn.FromSynonym,
             NativeCountries = await distributionTask,
             VernacularNames = vernaculars,
             BestImage = await imageTask,
@@ -195,18 +196,11 @@ public class GbifService(
                     : item.TryGetProperty("key", out var k) ? k.GetInt32() : 0;
             if (key == 0) continue;
 
-            // Deduplicate — prefer ACCEPTED over SYNONYM
             var status = item.TryGetProperty("taxonomicStatus", out var ts) ? ts.GetString() : null;
-            if (suggestions.ContainsKey(key))
-            {
-                if (status != "ACCEPTED") continue;
-                // Replace existing entry only if new one is ACCEPTED
-            }
-
             var canonicalName = item.TryGetProperty("canonicalName", out var cn) ? cn.GetString() : null;
             if (canonicalName == null) continue;
 
-            // Extract first English vernacular name
+            // Extract first English vernacular name from this result before resolving
             string? commonName = null;
             if (item.TryGetProperty("vernacularNames", out var vns))
             {
@@ -230,6 +224,40 @@ public class GbifService(
             var rank = item.TryGetProperty("rank", out var r) ? r.GetString() : null;
             var family = item.TryGetProperty("family", out var f) ? f.GetString() : null;
             var order = item.TryGetProperty("order", out var o) ? o.GetString() : null;
+
+            // Resolve synonyms to their accepted species
+            if (status is not ("ACCEPTED" or null))
+            {
+                var acceptedKey = item.TryGetProperty("acceptedKey", out var ak) ? ak.GetInt32()
+                    : item.TryGetProperty("nubKey", out var nk2) ? nk2.GetInt32() : 0;
+                if (acceptedKey > 0 && acceptedKey != key)
+                {
+                    // Follow to accepted species — use its details but keep the vernacular name
+                    try
+                    {
+                        var acceptedUrl = $"{GbifApiBase}/species/{acceptedKey}";
+                        var accepted = await GetJsonAsync(acceptedUrl, ct);
+                        var acceptedRank = accepted.TryGetProperty("rank", out var ar) ? ar.GetString() : null;
+                        if (acceptedRank is "SPECIES" or "SUBSPECIES")
+                        {
+                            key = acceptedKey;
+                            canonicalName = accepted.TryGetProperty("canonicalName", out var acn)
+                                ? acn.GetString() ?? canonicalName : canonicalName;
+                            status = "ACCEPTED";
+                            family = accepted.TryGetProperty("family", out var af) ? af.GetString() : family;
+                            order = accepted.TryGetProperty("order", out var ao) ? ao.GetString() : order;
+                            rank = acceptedRank;
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogDebug(ex, "Failed to resolve synonym {Key} to accepted species", key);
+                    }
+                }
+            }
+
+            // Deduplicate — skip if we already have this accepted species
+            if (suggestions.ContainsKey(key)) continue;
 
             suggestions[key] = new GbifSpeciesSuggestion
             {
@@ -395,6 +423,7 @@ public class GbifService(
             IucnCategory = (await iucnTask).Category,
             IucnCode = (await iucnTask).Code,
             IucnTaxonId = (await iucnTask).IucnTaxonId,
+            IucnFromSynonymFallback = (await iucnTask).FromSynonym,
             NativeCountries = await distributionTask,
             VernacularNames = vernaculars,
             BestImage = await imageTask,
@@ -858,7 +887,7 @@ public class GbifService(
         return result;
     }
 
-    private async Task<(string? Category, string? Code, string? IucnTaxonId)> FetchIucnStatusAsync(
+    private async Task<(string? Category, string? Code, string? IucnTaxonId, bool FromSynonym)> FetchIucnStatusAsync(
         int taxonKey, CancellationToken ct)
     {
         try
@@ -870,12 +899,69 @@ public class GbifService(
             var code = json.TryGetProperty("code", out var c) ? c.GetString() : null;
             var iucnId = json.TryGetProperty("iucnTaxonID", out var iid) ? iid.GetString() : null;
 
-            return (category, code, iucnId);
+            // If NOT_EVALUATED, try fallback strategies for taxonomic splits.
+            // GBIF sometimes splits species (e.g. Giraffa reticulata) but IUCN still
+            // assesses them under the old subspecies name (G. camelopardalis ssp. reticulata).
+            // Strategy: check synonyms — if any synonym is a subspecies (trinomial name),
+            // extract the parent species name and check its IUCN status.
+            var fromSynonym = false;
+            if (category is "NOT_EVALUATED" or "NOT_APPLICABLE")
+            {
+                logger.LogDebug("IUCN status is {Category} for taxonKey={TaxonKey}, trying synonym fallback", category, taxonKey);
+                try
+                {
+                    var synsUrl = $"{GbifApiBase}/species/{taxonKey}/synonyms?limit=20";
+                    var synsJson = await GetJsonAsync(synsUrl, ct);
+                    if (synsJson.TryGetProperty("results", out var synResults))
+                    {
+                        foreach (var syn in synResults.EnumerateArray())
+                        {
+                            var synName = syn.TryGetProperty("canonicalName", out var scn) ? scn.GetString() : null;
+                            if (synName == null) continue;
+
+                            // Look for subspecies synonyms with trinomial names (Genus species subspecies)
+                            var parts = synName.Split(' ');
+                            if (parts.Length >= 3)
+                            {
+                                var parentSpeciesName = $"{parts[0]} {parts[1]}";
+                                var matchUrl = $"{GbifApiBase}/species/match?name={Uri.EscapeDataString(parentSpeciesName)}&kingdom=Animalia";
+                                var matchJson = await GetJsonAsync(matchUrl, ct);
+                                var matchKey = matchJson.TryGetProperty("usageKey", out var mk) ? (int?)mk.GetInt32() : null;
+                                var matchRank = matchJson.TryGetProperty("rank", out var mr) ? mr.GetString() : null;
+
+                                if (matchKey.HasValue && matchKey.Value != taxonKey && matchRank == "SPECIES")
+                                {
+                                    var altIucnUrl = $"{GbifApiBase}/species/{matchKey.Value}/iucnRedListCategory";
+                                    var altIucn = await GetJsonAsync(altIucnUrl, ct);
+                                    var altCategory = altIucn.TryGetProperty("category", out var acat) ? acat.GetString() : null;
+                                    if (altCategory != null && altCategory is not ("NOT_EVALUATED" or "NOT_APPLICABLE"))
+                                    {
+                                        logger.LogInformation(
+                                            "IUCN fallback via synonym: taxonKey={TaxonKey} → synonym {SynName} → {ParentSpecies} ({AltCategory})",
+                                            taxonKey, synName, parentSpeciesName, altCategory);
+                                        category = altCategory;
+                                        code = altIucn.TryGetProperty("code", out var ac) ? ac.GetString() : code;
+                                        iucnId = altIucn.TryGetProperty("iucnTaxonID", out var aid) ? aid.GetString() : iucnId;
+                                        fromSynonym = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogDebug(ex, "IUCN synonym fallback failed for taxonKey={TaxonKey}", taxonKey);
+                }
+            }
+
+            return (category, code, iucnId, fromSynonym);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogDebug(ex, "GBIF IUCN status unavailable for taxonKey={TaxonKey}", taxonKey);
-            return (null, null, null);
+            return (null, null, null, false);
         }
     }
 

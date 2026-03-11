@@ -195,6 +195,9 @@ public class AnimalService(
     public async Task PublishAllAsync() =>
         await animalRepo.PublishAllAsync();
 
+    public async Task DeleteAsync(Guid id) =>
+        await animalRepo.DeleteAsync(id);
+
     public async Task<(string? ImageUrl, string? AnimalName)> GenerateImageAsync(Guid id, CancellationToken ct)
     {
         var animal = await animalRepo.GetByIdAsync(id);
