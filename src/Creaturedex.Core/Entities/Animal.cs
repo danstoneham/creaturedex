@@ -45,4 +45,51 @@ public class Animal
     public string? ImageLicense { get; set; }
     public string? ImageRightsHolder { get; set; }
     public string? ImageSource { get; set; }
+
+    // Wikipedia reference
+    public string? WikipediaUrl { get; set; }
+
+    // Conservation (structured)
+    public string? ConservationStatusCode { get; set; }
+    public string? PopulationTrend { get; set; }
+    public string? PopulationEstimate { get; set; }
+
+    // Diet (structured)
+    public string? DietTypeCode { get; set; }
+
+    // Activity
+    public string? ActivityPatternCode { get; set; }
+
+    // Domestication
+    public string? DomesticationStatusCode { get; set; }
+
+    // Physical measurements (metric)
+    public decimal? WeightMinKg { get; set; }
+    public decimal? WeightMaxKg { get; set; }
+    public decimal? LengthMinCm { get; set; }
+    public decimal? LengthMaxCm { get; set; }
+    public decimal? SpeedMaxKph { get; set; }
+
+    // Lifespan (structured)
+    public int? LifespanWildMinYears { get; set; }
+    public int? LifespanWildMaxYears { get; set; }
+    public int? LifespanCaptivityMinYears { get; set; }
+    public int? LifespanCaptivityMaxYears { get; set; }
+
+    // Reproduction
+    public int? GestationMinDays { get; set; }
+    public int? GestationMaxDays { get; set; }
+    public int? LitterSizeMin { get; set; }
+    public int? LitterSizeMax { get; set; }
+
+    // Additional structured text
+    public string? AlsoKnownAs { get; set; }
+    public string? DistinguishingFeatures { get; set; }
+    public string? LegalProtections { get; set; }
+    public string? ColoursJson { get; set; }
+    public string? HabitatTypesJson { get; set; }
+
+    // Data source tracking
+    public int DataSourceVersion { get; set; } = 1;
+    public DateTime? LastDataFetchAt { get; set; }
 }
