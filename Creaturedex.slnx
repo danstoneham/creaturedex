@@ -6,4 +6,7 @@
     <Project Path="src/Creaturedex.Data/Creaturedex.Data.csproj" />
     <Project Path="src/Creaturedex.Shared/Creaturedex.Shared.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Creaturedex.Tests/Creaturedex.Tests.csproj" />
+  </Folder>
 </Solution>
