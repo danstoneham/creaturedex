@@ -86,14 +86,28 @@ public class AnimalRepository(DbConnectionFactory db)
                 GeneratedAt, IsPublished, CreatedAt, UpdatedAt, Version,
                 GbifTaxonKey, GbifCanonicalName, MapTileUrlTemplate, MapObservationCount,
                 MapMinLat, MapMaxLat, MapMinLng, MapMaxLng,
-                ImageLicense, ImageRightsHolder, ImageSource)
+                ImageLicense, ImageRightsHolder, ImageSource,
+                WikipediaUrl, ConservationStatusCode, PopulationTrend, PopulationEstimate,
+                DietTypeCode, ActivityPatternCode, DomesticationStatusCode,
+                WeightMinKg, WeightMaxKg, LengthMinCm, LengthMaxCm, SpeedMaxKph,
+                LifespanWildMinYears, LifespanWildMaxYears, LifespanCaptivityMinYears, LifespanCaptivityMaxYears,
+                GestationMinDays, GestationMaxDays, LitterSizeMin, LitterSizeMax,
+                AlsoKnownAs, DistinguishingFeatures, LegalProtections, ColoursJson, HabitatTypesJson,
+                DataSourceVersion, LastDataFetchAt)
             VALUES (@Id, @Slug, @CommonName, @ScientificName, @Summary, @Description,
                 @CategoryId, @TaxonomyId, @IsPet, @ImageUrl, @ConservationStatus, @NativeRegion,
                 @Habitat, @Diet, @Lifespan, @SizeInfo, @Behaviour, @FunFacts,
                 @GeneratedAt, @IsPublished, @CreatedAt, @UpdatedAt, @Version,
                 @GbifTaxonKey, @GbifCanonicalName, @MapTileUrlTemplate, @MapObservationCount,
                 @MapMinLat, @MapMaxLat, @MapMinLng, @MapMaxLng,
-                @ImageLicense, @ImageRightsHolder, @ImageSource)
+                @ImageLicense, @ImageRightsHolder, @ImageSource,
+                @WikipediaUrl, @ConservationStatusCode, @PopulationTrend, @PopulationEstimate,
+                @DietTypeCode, @ActivityPatternCode, @DomesticationStatusCode,
+                @WeightMinKg, @WeightMaxKg, @LengthMinCm, @LengthMaxCm, @SpeedMaxKph,
+                @LifespanWildMinYears, @LifespanWildMaxYears, @LifespanCaptivityMinYears, @LifespanCaptivityMaxYears,
+                @GestationMinDays, @GestationMaxDays, @LitterSizeMin, @LitterSizeMax,
+                @AlsoKnownAs, @DistinguishingFeatures, @LegalProtections, @ColoursJson, @HabitatTypesJson,
+                @DataSourceVersion, @LastDataFetchAt)
             """, animal);
 
         return animal.Id;
@@ -120,6 +134,19 @@ public class AnimalRepository(DbConnectionFactory db)
                 MapMinLng = @MapMinLng, MapMaxLng = @MapMaxLng,
                 ImageLicense = @ImageLicense, ImageRightsHolder = @ImageRightsHolder,
                 ImageSource = @ImageSource,
+                WikipediaUrl = @WikipediaUrl, ConservationStatusCode = @ConservationStatusCode,
+                PopulationTrend = @PopulationTrend, PopulationEstimate = @PopulationEstimate,
+                DietTypeCode = @DietTypeCode, ActivityPatternCode = @ActivityPatternCode,
+                DomesticationStatusCode = @DomesticationStatusCode,
+                WeightMinKg = @WeightMinKg, WeightMaxKg = @WeightMaxKg,
+                LengthMinCm = @LengthMinCm, LengthMaxCm = @LengthMaxCm, SpeedMaxKph = @SpeedMaxKph,
+                LifespanWildMinYears = @LifespanWildMinYears, LifespanWildMaxYears = @LifespanWildMaxYears,
+                LifespanCaptivityMinYears = @LifespanCaptivityMinYears, LifespanCaptivityMaxYears = @LifespanCaptivityMaxYears,
+                GestationMinDays = @GestationMinDays, GestationMaxDays = @GestationMaxDays,
+                LitterSizeMin = @LitterSizeMin, LitterSizeMax = @LitterSizeMax,
+                AlsoKnownAs = @AlsoKnownAs, DistinguishingFeatures = @DistinguishingFeatures,
+                LegalProtections = @LegalProtections, ColoursJson = @ColoursJson, HabitatTypesJson = @HabitatTypesJson,
+                DataSourceVersion = @DataSourceVersion, LastDataFetchAt = @LastDataFetchAt,
                 Version = Version + 1
             WHERE Id = @Id AND Version = @Version AND DeletedAt IS NULL
             """, animal);
