@@ -12,4 +12,7 @@ public class AnimalProfileResponse
     public string CategoryName { get; set; } = string.Empty;
     public string CategorySlug { get; set; } = string.Empty;
     public bool IsReviewed { get; set; }
+
+    // Resolved reference data for display
+    public ReferenceConservationStatus? ConservationStatusRef { get; set; }
 }

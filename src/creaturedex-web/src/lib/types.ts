@@ -13,6 +13,14 @@ export interface AnimalCard {
   isPublished: boolean;
 }
 
+export interface ConservationStatus {
+  code: string;
+  name: string;
+  description: string;
+  severity: number;
+  colour: string;
+}
+
 export interface AnimalProfile {
   animal: Animal;
   taxonomy: Taxonomy | null;
@@ -22,6 +30,7 @@ export interface AnimalProfile {
   categoryName: string;
   categorySlug: string;
   isReviewed: boolean;
+  conservationStatusRef: ConservationStatus | null;
 }
 
 export interface Animal {
@@ -57,6 +66,35 @@ export interface Animal {
   imageLicense?: string;
   imageRightsHolder?: string;
   imageSource?: string;
+
+  // Structured fields (v2 pipeline)
+  wikipediaUrl: string | null;
+  conservationStatusCode: string | null;
+  populationTrend: string | null;
+  populationEstimate: string | null;
+  dietTypeCode: string | null;
+  activityPatternCode: string | null;
+  domesticationStatusCode: string | null;
+  weightMinKg: number | null;
+  weightMaxKg: number | null;
+  lengthMinCm: number | null;
+  lengthMaxCm: number | null;
+  speedMaxKph: number | null;
+  lifespanWildMinYears: number | null;
+  lifespanWildMaxYears: number | null;
+  lifespanCaptivityMinYears: number | null;
+  lifespanCaptivityMaxYears: number | null;
+  gestationMinDays: number | null;
+  gestationMaxDays: number | null;
+  litterSizeMin: number | null;
+  litterSizeMax: number | null;
+  alsoKnownAs: string | null;
+  distinguishingFeatures: string | null;
+  legalProtections: string | null;
+  coloursJson: string | null;
+  habitatTypesJson: string | null;
+  dataSourceVersion: number;
+  lastDataFetchAt: string | null;
 }
 
 export interface Taxonomy {

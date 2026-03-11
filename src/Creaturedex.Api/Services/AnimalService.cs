@@ -14,6 +14,7 @@ public class AnimalService(
     PetCareGuideRepository careRepo,
     CharacteristicRepository charRepo,
     TagRepository tagRepo,
+    ReferenceDataRepository referenceRepo,
     ImageGenerationService imageService,
     WikipediaService wikipediaService,
     ContentReviewService reviewService,
@@ -81,6 +82,15 @@ public class AnimalService(
         var categories = (await categoryRepo.GetAllAsync()).ToDictionary(c => c.Id);
         var category = categories.GetValueOrDefault(animal.CategoryId);
 
+        // Resolve conservation status reference data
+        ReferenceConservationStatus? conservationRef = null;
+        if (!string.IsNullOrEmpty(animal.ConservationStatusCode))
+        {
+            var statuses = await referenceRepo.GetConservationStatusesAsync();
+            conservationRef = statuses.FirstOrDefault(s =>
+                string.Equals(s.Code, animal.ConservationStatusCode, StringComparison.OrdinalIgnoreCase));
+        }
+
         return new AnimalProfileResponse
         {
             Animal = animal,
@@ -90,7 +100,8 @@ public class AnimalService(
             Tags = tags,
             CategoryName = category?.Name ?? "",
             CategorySlug = category?.Slug ?? "",
-            IsReviewed = animal.ReviewedAt.HasValue
+            IsReviewed = animal.ReviewedAt.HasValue,
+            ConservationStatusRef = conservationRef,
         };
     }
 
