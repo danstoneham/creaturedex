@@ -25,6 +25,7 @@ builder.Services.AddScoped<CharacteristicRepository>();
 builder.Services.AddScoped<TagRepository>();
 builder.Services.AddScoped<EmbeddingRepository>();
 builder.Services.AddScoped<SearchRepository>();
+builder.Services.AddScoped<ReferenceDataRepository>();
 
 // AI
 var aiConfig = builder.Configuration.GetSection("AI").Get<AIConfig>() ?? new AIConfig();
