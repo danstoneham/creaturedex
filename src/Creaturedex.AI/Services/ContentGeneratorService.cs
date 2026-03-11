@@ -1,6 +1,4 @@
-using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Creaturedex.AI.Models;
 using Creaturedex.Core.Entities;
 using Creaturedex.Data.Repositories;
@@ -16,481 +14,254 @@ public class DuplicateAnimalException(string animalName, string slug)
 }
 
 public class ContentGeneratorService(
-    AIService aiService,
+    AnimalDataAssembler assembler,
+    ContentSummariser summariser,
     EmbeddingService embeddingService,
     ImageGenerationService imageService,
-    WikipediaService wikipediaService,
-    GbifService gbifService,
     ImageScreeningService imageScreeningService,
+    WikipediaService wikipediaService,
+    ReferenceDataRepository referenceRepo,
     AnimalRepository animalRepo,
     CategoryRepository categoryRepo,
     TaxonomyRepository taxonomyRepo,
     PetCareGuideRepository careRepo,
     CharacteristicRepository charRepo,
     TagRepository tagRepo,
+    AIService aiService,
     AIConfig aiConfig,
     ILogger<ContentGeneratorService> logger)
 {
-    private const string SystemPrompt = """
-        You are a skilled science writer for Creaturedex, a children's animal encyclopedia.
-        Your audience is 8–16 year olds. Write with warmth, enthusiasm, and clear language.
-        IMPORTANT: All factual data has been pre-filled from authoritative scientific sources.
-        Your job is ONLY to summarise and rephrase the provided data in an engaging way.
-        DO NOT invent or fabricate any numerical data (weights, lengths, speeds, populations, dates).
-        DO NOT invent taxonomy — use exactly what is provided.
-        DO NOT change conservation status — use exactly what is provided.
-        For characteristics (Weight, Length, Speed, etc.): ONLY include values explicitly stated in the provided data. If the source data does not mention a specific measurement, omit that characteristic entirely rather than guessing.
-
-        When uncertain about specific numbers, OMIT them rather than guessing. Never present fabricated numbers as fact.
-
-        For fun facts: stick to well-known, easily verifiable facts. NEVER invent specific dates, names, or historical events. Prefer fascinating biological/behavioural facts over historical anecdotes.
-
-        You MUST respond with valid JSON matching this exact schema:
-        {
-          "commonName": "string",
-          "scientificName": "string or null",
-          "slug": "lowercase-hyphenated-string",
-          "summary": "One or two sentence hook — friendly, interesting, max 200 chars",
-          "description": "Full 3-4 paragraph description in layman's terms",
-          "categorySlug": "string matching one of: dogs, cats, small-mammals, reptiles, birds, fish, insects, farm, wild-mammals, ocean, primates",
-          "isPet": true/false,
-          "conservationStatus": "Least Concern | Near Threatened | Vulnerable | Endangered | Critically Endangered | Extinct in the Wild | Extinct | Data Deficient | null",
-          "nativeRegion": "string",
-          "habitat": "string describing natural habitat",
-          "diet": "string describing diet",
-          "lifespan": "string e.g. '10-15 years'",
-          "sizeInfo": "string with metric and imperial",
-          "behaviour": "string describing behaviour",
-          "funFacts": ["array", "of", "3-5 fun facts"],
-          "taxonomy": {
-            "kingdom": "Animalia",
-            "phylum": "string",
-            "class": "string",
-            "order": "string",
-            "family": "string",
-            "genus": "string",
-            "species": "string",
-            "subspecies": "string or null"
-          },
-          "characteristics": [
-            { "name": "Weight", "value": "string" },
-            { "name": "Length", "value": "string" }
-          ],
-          "tags": ["array", "of", "relevant", "tags"],
-          "petCareGuide": null OR {
-            "difficultyRating": 1-5,
-            "costRangeMin": number,
-            "costRangeMax": number,
-            "costCurrency": "GBP",
-            "spaceRequirement": "string",
-            "timeCommitment": "string",
-            "housing": "detailed string",
-            "dietAsPet": "detailed string",
-            "exercise": "string",
-            "grooming": "string",
-            "healthConcerns": "string",
-            "training": "string",
-            "goodWithChildren": true/false,
-            "goodWithOtherPets": true/false,
-            "temperament": "string",
-            "legalConsiderations": "string"
-          }
-        }
-
-        Include petCareGuide ONLY if isPet is true. Respond with ONLY the JSON, no markdown fences or extra text.
-        """;
-
     public async Task<Guid?> GenerateAnimalAsync(string animalName, bool skipImage = false,
         int? taxonKey = null, string? scientificName = null, CancellationToken ct = default)
     {
         try
         {
-            logger.LogInformation("Generating content for: {AnimalName}", animalName);
+            logger.LogInformation("Generating content for: {AnimalName} [v2 pipeline]", animalName);
 
-            // Early duplicate check before calling AI
+            // 1. Early duplicate check
             var expectedSlug = animalName.ToLower().Replace(' ', '-');
             var earlyCheck = await animalRepo.GetBySlugIncludingUnpublishedAsync(expectedSlug);
             if (earlyCheck != null)
                 throw new DuplicateAnimalException(earlyCheck.CommonName, earlyCheck.Slug);
 
-            // Fetch GBIF data as PRIMARY source — skip resolution if taxonKey provided
-            GbifAnimalData? gbifData;
-            if (taxonKey.HasValue && scientificName != null)
-            {
-                logger.LogInformation("Using pre-resolved GBIF taxonKey={TaxonKey} ({ScientificName}) for {AnimalName}",
-                    taxonKey.Value, scientificName, animalName);
-                gbifData = await gbifService.FetchAnimalDataByKeyAsync(taxonKey.Value, scientificName, ct);
-            }
-            else
-            {
-                gbifData = await gbifService.FetchAnimalDataAsync(animalName, ct);
-            }
-            if (gbifData != null)
-                logger.LogInformation("GBIF data fetched for {AnimalName} (taxonKey={TaxonKey})", animalName, gbifData.TaxonKey);
-            else
-                logger.LogWarning("No GBIF data found for {AnimalName}, will use Wikipedia as fallback", animalName);
+            // 2. Assemble all factual data (NO AI involved)
+            var assembled = await assembler.AssembleAsync(animalName, taxonKey, scientificName, ct);
+            if (assembled == null)
+                throw new InvalidOperationException(
+                    $"Could not assemble data for {animalName} — neither GBIF nor Wikipedia returned usable data");
 
-            var gbifHasSufficientData = gbifData != null && (
-                gbifData.HabitatProse != null || gbifData.DietProse != null || gbifData.Taxonomy != null);
-            var gbifIucnMissing = gbifData?.IucnCategory == null
-                || MapIucnCategory(gbifData.IucnCategory) == null;
-            var gbifIucnFromSynonym = gbifData?.IucnFromSynonymFallback == true;
-
-            // Always fetch Wikipedia — it provides supplementary data (physical descriptions,
-            // verified measurements) that keeps the AI from fabricating numbers
-            WikipediaArticle? wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
-            if (wikiArticle != null)
-                logger.LogInformation("Wikipedia fetched for {AnimalName} ({Url})", animalName, wikiArticle.Url);
-
-            // If GBIF has no direct IUCN (missing or from synonym fallback), try Wikipedia infobox
-            // Wikipedia infoboxes have subspecies-level IUCN assessments that GBIF doesn't expose
-            string? wikiIucnStatus = null;
-            if (gbifIucnMissing || gbifIucnFromSynonym)
-            {
-                wikiIucnStatus = await wikipediaService.GetIucnStatusFromInfoboxAsync(animalName, ct);
-                if (wikiIucnStatus != null)
-                    logger.LogInformation("IUCN status from Wikipedia infobox: {Status} (GBIF was {GbifStatus}{Fallback})",
-                        wikiIucnStatus,
-                        gbifData?.IucnCategory ?? "null",
-                        gbifIucnFromSynonym ? " via synonym fallback" : "");
-            }
-
-            // Build prompt from available data sources
-            var userPrompt = BuildPrompt(animalName, gbifData, wikiArticle, wikiIucnStatus);
-
-            var response = await aiService.CompleteAsync(SystemPrompt, userPrompt, ct);
-
-            // Extract JSON from response — Ollama may wrap it in markdown fences or preamble text
-            response = response.Trim();
-            if (response.StartsWith("```"))
-            {
-                response = response[response.IndexOf('\n')..];
-                if (response.Contains("```"))
-                    response = response[..response.LastIndexOf("```")];
-                response = response.Trim();
-            }
-
-            // If response still doesn't start with '{', try to find the JSON object
-            if (!response.StartsWith('{'))
-            {
-                var jsonStart = response.IndexOf('{');
-                var jsonEnd = response.LastIndexOf('}');
-                if (jsonStart >= 0 && jsonEnd > jsonStart)
-                    response = response[jsonStart..(jsonEnd + 1)];
-            }
-
-            // Try to parse, and if it fails attempt repair
-            JsonDocument json;
-            try
-            {
-                json = JsonDocument.Parse(response);
-            }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Initial JSON parse failed at byte {Position}, attempting repair",
-                    ex.BytePositionInLine);
-
-                // Log a snippet around the error position for diagnostics
-                if (ex.BytePositionInLine is > 0 and < long.MaxValue)
-                {
-                    var pos = (int)ex.BytePositionInLine.Value;
-                    var start = Math.Max(0, pos - 50);
-                    var end = Math.Min(response.Length, pos + 50);
-                    logger.LogWarning("JSON context around error: ...{Snippet}...",
-                        response[start..end]);
-                }
-
-                response = RepairJson(response);
-                try
-                {
-                    json = JsonDocument.Parse(response);
-                    logger.LogInformation("JSON repair succeeded");
-                }
-                catch (JsonException retryEx)
-                {
-                    logger.LogError(retryEx, "JSON repair failed, raw response length={Length}", response.Length);
-                    throw new InvalidOperationException(
-                        $"AI produced invalid JSON that could not be repaired. Error: {retryEx.Message}", retryEx);
-                }
-            }
-            var root = json.RootElement;
-
-            // Resolve category
-            var categorySlug = root.GetProperty("categorySlug").GetString() ?? "wild-mammals";
-            var category = await categoryRepo.GetBySlugAsync(categorySlug);
-            if (category == null)
-            {
-                logger.LogWarning("Category {Slug} not found, falling back to wild-mammals", categorySlug);
-                category = await categoryRepo.GetBySlugAsync("wild-mammals");
-            }
-
-            // Check for duplicate slug
-            var slug = root.GetProperty("slug").GetString() ?? animalName.ToLower().Replace(' ', '-');
-            var existing = await animalRepo.GetBySlugIncludingUnpublishedAsync(slug);
+            // 3. Check slug again (assembler may generate a different slug)
+            var existing = await animalRepo.GetBySlugIncludingUnpublishedAsync(assembled.Slug);
             if (existing != null)
                 throw new DuplicateAnimalException(existing.CommonName, existing.Slug);
 
-            // Create taxonomy — start from AI response, then override with GBIF if available
+            // 4. Run constrained AI summarisation (parallel where possible)
+            var introText = assembled.WikipediaIntroText ?? assembled.GbifHabitatProse ?? "";
+            var fullWikiText = string.Join("\n\n", new[]
+            {
+                assembled.WikipediaIntroText, assembled.WikipediaDescriptionText,
+                assembled.WikipediaHabitatText, assembled.WikipediaDietText,
+                assembled.WikipediaBehaviourText, assembled.WikipediaConservationText
+            }.Where(t => t != null));
+
+            // Get colour codes for AI matching
+            var colours = await referenceRepo.GetColoursAsync();
+            var colourCodes = colours.Select(c => c.Code).ToList();
+
+            // Run AI tasks in parallel
+            var summaryTask = summariser.SummariseIntroAsync(assembled.CommonName, introText, ct);
+            var descriptionTask = summariser.SummariseDescriptionAsync(
+                assembled.CommonName, assembled.WikipediaIntroText,
+                assembled.WikipediaHabitatText ?? assembled.GbifHabitatProse,
+                assembled.WikipediaDietText ?? assembled.GbifDietProse,
+                assembled.WikipediaBehaviourText ?? assembled.GbifBehaviourProse, ct);
+            var funFactsTask = !string.IsNullOrWhiteSpace(fullWikiText)
+                ? summariser.ExtractFunFactsAsync(assembled.CommonName, fullWikiText, ct)
+                : Task.FromResult(new List<string>());
+            var coloursTask = summariser.MatchColoursAsync(
+                assembled.CommonName, assembled.WikipediaDescriptionText, colourCodes, ct);
+            var featuresTask = summariser.ExtractDistinguishingFeaturesAsync(
+                assembled.CommonName, assembled.WikipediaDescriptionText, ct);
+
+            // Summarise individual sections
+            var habitatTask = summariser.SummariseSectionAsync(
+                assembled.CommonName, "habitat",
+                assembled.WikipediaHabitatText ?? assembled.GbifHabitatProse, ct);
+            var dietTask = summariser.SummariseSectionAsync(
+                assembled.CommonName, "diet",
+                assembled.WikipediaDietText ?? assembled.GbifDietProse, ct);
+            var behaviourTask = summariser.SummariseSectionAsync(
+                assembled.CommonName, "behaviour",
+                assembled.WikipediaBehaviourText ?? assembled.GbifBehaviourProse, ct);
+
+            await Task.WhenAll(summaryTask, descriptionTask, funFactsTask,
+                coloursTask, featuresTask, habitatTask, dietTask, behaviourTask);
+
+            var summary = await summaryTask;
+            var description = await descriptionTask;
+            var funFacts = await funFactsTask;
+            var matchedColours = await coloursTask;
+            var features = await featuresTask;
+            var habitatSummary = await habitatTask;
+            var dietSummary = await dietTask;
+            var behaviourSummary = await behaviourTask;
+
+            // 5. Resolve category
+            var category = await categoryRepo.GetBySlugAsync(assembled.CategorySlug);
+            if (category == null)
+            {
+                logger.LogWarning("Category {Slug} not found, falling back to wild-mammals", assembled.CategorySlug);
+                category = await categoryRepo.GetBySlugAsync("wild-mammals");
+            }
+
+            // 6. Create taxonomy from assembled data (NO AI)
             var taxonomy = new Taxonomy { Kingdom = "Animalia" };
-            if (root.TryGetProperty("taxonomy", out var taxElement))
+            if (assembled.Taxonomy != null)
             {
-                taxonomy.Kingdom = GetStringOrNull(taxElement, "kingdom") ?? "Animalia";
-                taxonomy.Phylum = GetStringOrNull(taxElement, "phylum");
-                taxonomy.Class = GetStringOrNull(taxElement, "class");
-                taxonomy.TaxOrder = GetStringOrNull(taxElement, "order");
-                taxonomy.Family = GetStringOrNull(taxElement, "family");
-                taxonomy.Genus = GetStringOrNull(taxElement, "genus");
-                taxonomy.Species = GetStringOrNull(taxElement, "species");
-                taxonomy.Subspecies = GetStringOrNull(taxElement, "subspecies");
+                var t = assembled.Taxonomy;
+                taxonomy.Kingdom = t.Kingdom;
+                taxonomy.Phylum = t.Phylum;
+                taxonomy.Class = t.Class;
+                taxonomy.TaxOrder = t.Order;
+                taxonomy.Family = t.Family;
+                taxonomy.Genus = t.Genus;
+                taxonomy.Species = t.Species;
+                taxonomy.Subspecies = t.Subspecies;
+                if (t.ColTaxonId != null) taxonomy.ColTaxonId = t.ColTaxonId;
+                if (t.Authorship != null) taxonomy.Authorship = t.Authorship;
+                if (t.Synonyms.Count > 0) taxonomy.Synonyms = string.Join("; ", t.Synonyms);
             }
-
-            // Override taxonomy with authoritative GBIF data
-            if (gbifData?.Taxonomy != null)
-            {
-                var gbifTax = gbifData.Taxonomy;
-                taxonomy.Kingdom = gbifTax.Kingdom;
-                taxonomy.Phylum = gbifTax.Phylum ?? taxonomy.Phylum;
-                taxonomy.Class = gbifTax.Class ?? taxonomy.Class;
-                taxonomy.TaxOrder = gbifTax.Order ?? taxonomy.TaxOrder;
-                taxonomy.Family = gbifTax.Family ?? taxonomy.Family;
-                taxonomy.Genus = gbifTax.Genus ?? taxonomy.Genus;
-                taxonomy.Species = gbifTax.Species ?? taxonomy.Species;
-                taxonomy.Subspecies = gbifTax.Subspecies ?? taxonomy.Subspecies;
-
-                // If GBIF has no order but the AI set order == class, clear it to avoid duplication
-                // (e.g. GBIF treats Squamata as a CLASS with no order level)
-                if (gbifTax.Order == null && taxonomy.TaxOrder != null
-                    && string.Equals(taxonomy.TaxOrder, taxonomy.Class, StringComparison.OrdinalIgnoreCase))
-                {
-                    logger.LogInformation("Clearing duplicated order={Order} (same as class) for {AnimalName}",
-                        taxonomy.TaxOrder, animalName);
-                    taxonomy.TaxOrder = null;
-                }
-
-                // Store CoL data if available
-                if (gbifTax.ColTaxonId != null) taxonomy.ColTaxonId = gbifTax.ColTaxonId;
-                if (gbifTax.Authorship != null) taxonomy.Authorship = gbifTax.Authorship;
-                if (gbifTax.Synonyms.Count > 0) taxonomy.Synonyms = string.Join("; ", gbifTax.Synonyms);
-
-                logger.LogInformation("Taxonomy overridden with GBIF data for {AnimalName}", animalName);
-            }
-
             var taxonomyId = await taxonomyRepo.CreateAsync(taxonomy);
 
-            // Create animal
-            var isPet = root.GetProperty("isPet").GetBoolean();
-            var funFacts = root.GetProperty("funFacts").EnumerateArray()
-                .Select(f => f.GetString()).Where(f => f != null).ToList();
+            // 7. Determine isPet from domestication status
+            var domStatuses = await referenceRepo.GetDomesticationStatusesAsync();
+            var domStatus = domStatuses.FirstOrDefault(d =>
+                string.Equals(d.Code, assembled.DomesticationStatusCode, StringComparison.OrdinalIgnoreCase));
+            var isPet = domStatus?.IsPet ?? false;
 
+            // 8. Build native region string
+            string? nativeRegion = null;
+            if (assembled.NativeCountries.Count > 0)
+            {
+                nativeRegion = string.Join(", ", assembled.NativeCountries.Take(10));
+                if (assembled.NativeCountries.Count > 10) nativeRegion += " and others";
+                if (nativeRegion.Length > 500) nativeRegion = nativeRegion[..nativeRegion.LastIndexOf(',', 497)] + "...";
+            }
+
+            // 9. Create animal with ALL structured columns
             var animal = new Animal
             {
-                Slug = slug,
-                CommonName = root.GetProperty("commonName").GetString() ?? animalName,
-                ScientificName = GetStringOrNull(root, "scientificName"),
-                Summary = root.GetProperty("summary").GetString() ?? "",
-                Description = root.GetProperty("description").GetString() ?? "",
+                Slug = assembled.Slug,
+                CommonName = assembled.CommonName,
+                ScientificName = assembled.ScientificName,
+                Summary = summary,
+                Description = description,
                 CategoryId = category!.Id,
                 TaxonomyId = taxonomyId,
                 IsPet = isPet,
-                ConservationStatus = GetStringOrNull(root, "conservationStatus"),
-                NativeRegion = GetStringOrNull(root, "nativeRegion"),
-                Habitat = GetStringOrNull(root, "habitat"),
-                Diet = GetStringOrNull(root, "diet"),
-                Lifespan = GetStringOrNull(root, "lifespan"),
-                SizeInfo = GetStringOrNull(root, "sizeInfo"),
-                Behaviour = GetStringOrNull(root, "behaviour"),
+                ConservationStatus = MapConservationCodeToName(assembled.ConservationStatusCode),
+                NativeRegion = nativeRegion,
+                Habitat = habitatSummary,
+                Diet = dietSummary,
+                Lifespan = FormatLifespan(assembled),
+                SizeInfo = FormatSizeInfo(assembled),
+                Behaviour = behaviourSummary,
                 FunFacts = JsonSerializer.Serialize(funFacts),
                 GeneratedAt = DateTime.UtcNow,
                 IsPublished = false,
+
+                // GBIF identifiers
+                GbifTaxonKey = assembled.GbifTaxonKey,
+                GbifCanonicalName = assembled.GbifCanonicalName,
+
+                // Map metadata
+                MapTileUrlTemplate = assembled.MapMetadata?.TileUrlTemplate,
+                MapObservationCount = assembled.MapMetadata?.ObservationCount,
+                MapMinLat = assembled.MapMetadata?.MinLat,
+                MapMaxLat = assembled.MapMetadata?.MaxLat,
+                MapMinLng = assembled.MapMetadata?.MinLng,
+                MapMaxLng = assembled.MapMetadata?.MaxLng,
+
+                // NEW structured columns
+                WikipediaUrl = assembled.WikipediaUrl,
+                ConservationStatusCode = assembled.ConservationStatusCode,
+                PopulationTrend = assembled.PopulationTrend,
+                PopulationEstimate = assembled.PopulationEstimate,
+                DietTypeCode = assembled.DietTypeCode,
+                ActivityPatternCode = assembled.ActivityPatternCode,
+                DomesticationStatusCode = assembled.DomesticationStatusCode,
+                WeightMinKg = assembled.WeightMinKg,
+                WeightMaxKg = assembled.WeightMaxKg,
+                LengthMinCm = assembled.LengthMinCm,
+                LengthMaxCm = assembled.LengthMaxCm,
+                SpeedMaxKph = assembled.SpeedMaxKph,
+                LifespanWildMinYears = assembled.LifespanWildMinYears,
+                LifespanWildMaxYears = assembled.LifespanWildMaxYears,
+                LifespanCaptivityMinYears = assembled.LifespanCaptivityMinYears,
+                LifespanCaptivityMaxYears = assembled.LifespanCaptivityMaxYears,
+                GestationMinDays = assembled.GestationMinDays,
+                GestationMaxDays = assembled.GestationMaxDays,
+                LitterSizeMin = assembled.LitterSizeMin,
+                LitterSizeMax = assembled.LitterSizeMax,
+                AlsoKnownAs = assembled.AlsoKnownAs,
+                DistinguishingFeatures = features.Count > 0 ? JsonSerializer.Serialize(features) : null,
+                ColoursJson = matchedColours.Count > 0 ? JsonSerializer.Serialize(matchedColours) : null,
+                HabitatTypesJson = assembled.HabitatTypeCodes.Count > 0
+                    ? JsonSerializer.Serialize(assembled.HabitatTypeCodes) : null,
+                DataSourceVersion = 2,
+                LastDataFetchAt = DateTime.UtcNow,
             };
-
-            // Override conservation status — priority: Wikipedia infobox > GBIF direct > GBIF synonym fallback
-            // Wikipedia infoboxes have subspecies-level IUCN data that GBIF doesn't expose
-            if (wikiIucnStatus != null)
-            {
-                animal.ConservationStatus = wikiIucnStatus;
-                logger.LogInformation("Conservation status set from Wikipedia infobox: {Status}", wikiIucnStatus);
-            }
-            else if (gbifData?.IucnCategory != null)
-            {
-                var mappedGbifStatus = MapIucnCategory(gbifData.IucnCategory);
-                if (mappedGbifStatus != null)
-                {
-                    animal.ConservationStatus = mappedGbifStatus;
-                    logger.LogInformation("Conservation status set from GBIF: {Status}{Fallback}",
-                        mappedGbifStatus, gbifIucnFromSynonym ? " (via synonym fallback)" : "");
-                }
-            }
-
-            // Override scientific name with GBIF canonical name if available
-            if (gbifData?.CanonicalName != null)
-                animal.ScientificName = gbifData.CanonicalName;
-
-            // Override native region with GBIF distribution data if available
-            if (gbifData?.NativeCountries.Count > 0)
-            {
-                // Cap at 10 regions to keep it readable for a children's encyclopedia
-                var region = string.Join(", ", gbifData.NativeCountries.Take(10));
-                if (gbifData.NativeCountries.Count > 10)
-                    region += " and others";
-                // Truncate to fit NativeRegion column (NVARCHAR(500))
-                if (region.Length > 500)
-                    region = region[..region.LastIndexOf(',', 497)] + "...";
-                animal.NativeRegion = region;
-            }
-
-            // Store GBIF identifiers
-            if (gbifData != null)
-            {
-                animal.GbifTaxonKey = gbifData.TaxonKey;
-                animal.GbifCanonicalName = gbifData.CanonicalName;
-            }
-
-            // Store map metadata
-            if (gbifData?.MapMetadata != null)
-            {
-                var map = gbifData.MapMetadata;
-                animal.MapTileUrlTemplate = map.TileUrlTemplate;
-                animal.MapObservationCount = map.ObservationCount;
-                animal.MapMinLat = map.MinLat;
-                animal.MapMaxLat = map.MaxLat;
-                animal.MapMinLng = map.MinLng;
-                animal.MapMaxLng = map.MaxLng;
-            }
 
             var animalId = await animalRepo.CreateAsync(animal);
 
-            // Create pet care guide if applicable
-            if (isPet && root.TryGetProperty("petCareGuide", out var careElement) && careElement.ValueKind != JsonValueKind.Null)
-            {
-                var guide = new PetCareGuide
+            // 10. Create characteristics from numeric data
+            var characteristics = new List<AnimalCharacteristic>();
+            var sortOrder = 0;
+            if (assembled.WeightMinKg != null || assembled.WeightMaxKg != null)
+                characteristics.Add(new AnimalCharacteristic
                 {
-                    AnimalId = animalId,
-                    DifficultyRating = careElement.GetProperty("difficultyRating").GetInt32(),
-                    CostRangeMin = GetDecimalOrNull(careElement, "costRangeMin"),
-                    CostRangeMax = GetDecimalOrNull(careElement, "costRangeMax"),
-                    CostCurrency = GetStringOrNull(careElement, "costCurrency") ?? "GBP",
-                    SpaceRequirement = GetStringOrNull(careElement, "spaceRequirement"),
-                    TimeCommitment = GetStringOrNull(careElement, "timeCommitment"),
-                    Housing = GetStringOrNull(careElement, "housing"),
-                    DietAsPet = GetStringOrNull(careElement, "dietAsPet"),
-                    Exercise = GetStringOrNull(careElement, "exercise"),
-                    Grooming = GetStringOrNull(careElement, "grooming"),
-                    HealthConcerns = GetStringOrNull(careElement, "healthConcerns"),
-                    Training = GetStringOrNull(careElement, "training"),
-                    GoodWithChildren = GetBoolOrNull(careElement, "goodWithChildren"),
-                    GoodWithOtherPets = GetBoolOrNull(careElement, "goodWithOtherPets"),
-                    Temperament = GetStringOrNull(careElement, "temperament"),
-                    LegalConsiderations = GetStringOrNull(careElement, "legalConsiderations"),
-                };
-                await careRepo.CreateAsync(guide);
-            }
-
-            // Create characteristics
-            if (root.TryGetProperty("characteristics", out var charsElement))
-            {
-                var chars = charsElement.EnumerateArray().Select((c, i) => new AnimalCharacteristic
+                    AnimalId = animalId, CharacteristicName = "Weight",
+                    CharacteristicValue = FormatWeight(assembled.WeightMinKg, assembled.WeightMaxKg),
+                    SortOrder = sortOrder++
+                });
+            if (assembled.LengthMinCm != null || assembled.LengthMaxCm != null)
+                characteristics.Add(new AnimalCharacteristic
                 {
-                    AnimalId = animalId,
-                    CharacteristicName = c.GetProperty("name").GetString() ?? "",
-                    CharacteristicValue = c.GetProperty("value").GetString() ?? "",
-                    SortOrder = i
-                }).ToList();
-                await charRepo.BulkInsertAsync(chars);
-            }
+                    AnimalId = animalId, CharacteristicName = "Length",
+                    CharacteristicValue = FormatLength(assembled.LengthMinCm, assembled.LengthMaxCm),
+                    SortOrder = sortOrder++
+                });
+            if (assembled.SpeedMaxKph != null)
+                characteristics.Add(new AnimalCharacteristic
+                {
+                    AnimalId = animalId, CharacteristicName = "Speed",
+                    CharacteristicValue = $"{assembled.SpeedMaxKph:0.#} km/h ({assembled.SpeedMaxKph * 0.621m:0.#} mph)",
+                    SortOrder = sortOrder++
+                });
+            if (characteristics.Count > 0)
+                await charRepo.BulkInsertAsync(characteristics);
 
-            // Create tags
-            if (root.TryGetProperty("tags", out var tagsElement))
-            {
-                var tags = tagsElement.EnumerateArray()
-                    .Select(t => new AnimalTag { AnimalId = animalId, Tag = t.GetString() ?? "" })
-                    .Where(t => !string.IsNullOrEmpty(t.Tag))
-                    .ToList();
+            // 11. Create tags from assembled codes
+            var tags = assembled.TagCodes
+                .Select(code => new AnimalTag { AnimalId = animalId, Tag = code })
+                .ToList();
+            if (tags.Count > 0)
                 await tagRepo.BulkInsertAsync(tags);
+
+            // 12. Pet care guide (kept as AI-driven for pet animals only)
+            if (isPet)
+            {
+                await GeneratePetCareGuideAsync(animalId, animal, ct);
             }
 
-            // Generate embedding
+            // 13. Generate embedding
             var embeddingText = $"{animal.CommonName} {animal.Summary} {animal.Description} {string.Join(" ", funFacts)}";
             await embeddingService.GenerateAndStoreAsync(animalId, embeddingText, aiConfig.EmbeddingModel);
 
-            // Image priority: 1) GBIF CC BY 4.0 (child-safe screened), 2) Wikipedia thumbnail, 3) AI-generated (manual only)
-            var imageSet = false;
+            // 14. Handle images (same priority: GBIF -> Wikipedia -> AI)
+            await HandleImageAsync(animalId, animalName, assembled, skipImage, ct);
 
-            // Priority 1: GBIF image with child-safety screening
-            if (gbifData?.BestImage != null)
-            {
-                var gbifImageUrl = gbifData.BestImage.CachedUrl;
-                logger.LogInformation("Screening GBIF image for {AnimalName}: {ImageUrl}", animalName, gbifImageUrl);
-
-                var isSafe = await imageScreeningService.IsChildSafeAsync(gbifImageUrl, ct);
-                if (isSafe)
-                {
-                    await animalRepo.UpdateImageUrlAsync(animalId, gbifImageUrl);
-                    await animalRepo.UpdateImageAttributionAsync(
-                        animalId,
-                        gbifData.BestImage.License,
-                        gbifData.BestImage.RightsHolder,
-                        gbifData.BestImage.Publisher);
-                    logger.LogInformation("Using GBIF image for {AnimalName}: {ImageUrl} ({License})",
-                        animalName, gbifImageUrl, gbifData.BestImage.License);
-                    imageSet = true;
-                }
-                else
-                {
-                    logger.LogWarning("GBIF image failed child-safety screening for {AnimalName}, trying fallback", animalName);
-                }
-            }
-
-            // Priority 2: Wikipedia thumbnail as fallback
-            if (!imageSet && wikiArticle?.ImageUrl != null)
-            {
-                await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
-                if (wikiArticle.ImageLicense != null)
-                {
-                    await animalRepo.UpdateImageAttributionAsync(
-                        animalId,
-                        wikiArticle.ImageLicense,
-                        null,
-                        wikiArticle.Url);
-                }
-                logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
-                imageSet = true;
-            }
-
-            // Priority 2b: If we didn't fetch Wikipedia earlier but have no image, fetch it now just for the image
-            if (!imageSet && gbifHasSufficientData)
-            {
-                var wikiForImage = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
-                if (wikiForImage?.ImageUrl != null)
-                {
-                    await animalRepo.UpdateImageUrlAsync(animalId, wikiForImage.ImageUrl);
-                    if (wikiForImage.ImageLicense != null)
-                    {
-                        await animalRepo.UpdateImageAttributionAsync(
-                            animalId,
-                            wikiForImage.ImageLicense,
-                            null,
-                            wikiForImage.Url);
-                    }
-                    logger.LogInformation("Using Wikipedia image (fallback) for {AnimalName}: {ImageUrl}", animalName, wikiForImage.ImageUrl);
-                    imageSet = true;
-                }
-            }
-
-            // Priority 3: AI-generated via Stable Diffusion (only if enabled and no other image)
-            if (!imageSet && !skipImage && aiConfig.AutoGenerateImages)
-            {
-                var imageUrl = await imageService.GenerateAnimalImageAsync(
-                    animal.CommonName, animal.Slug, animal.ScientificName,
-                    animal.Summary, animal.Description, animal.Habitat, animal.SizeInfo, ct);
-                if (imageUrl != null)
-                {
-                    await animalRepo.UpdateImageUrlAsync(animalId, imageUrl);
-                    logger.LogInformation("Generated AI image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
-                }
-            }
-
-            logger.LogInformation("Successfully generated: {AnimalName} (ID: {Id})", animalName, animalId);
+            logger.LogInformation("Successfully generated: {AnimalName} (ID: {Id}) [v2 pipeline]", animalName, animalId);
             return animalId;
         }
         catch (Exception ex)
@@ -542,326 +313,207 @@ public class ContentGeneratorService(
         return results;
     }
 
-    private static string BuildPrompt(string animalName, GbifAnimalData? gbif, WikipediaArticle? wiki, string? wikiIucnOverride = null)
+    private async Task HandleImageAsync(Guid animalId, string animalName, AssembledAnimalData assembled, bool skipImage, CancellationToken ct)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"Generate a complete profile for: {animalName}");
-        sb.AppendLine();
+        var imageSet = false;
 
-        if (gbif != null)
+        // Priority 1: GBIF image with child-safety screening
+        if (assembled.GbifImage != null)
         {
-            sb.AppendLine("=== PRIMARY DATA (from GBIF — authoritative scientific source) ===");
+            var gbifImageUrl = assembled.GbifImage.CachedUrl;
+            logger.LogInformation("Screening GBIF image for {AnimalName}: {ImageUrl}", animalName, gbifImageUrl);
 
-            if (gbif.Taxonomy != null)
+            var isSafe = await imageScreeningService.IsChildSafeAsync(gbifImageUrl, ct);
+            if (isSafe)
             {
-                sb.AppendLine();
-                sb.AppendLine("TAXONOMY (use exactly as provided — do not modify):");
-                sb.AppendLine($"  Kingdom: {gbif.Taxonomy.Kingdom}");
-                if (gbif.Taxonomy.Phylum != null) sb.AppendLine($"  Phylum: {gbif.Taxonomy.Phylum}");
-                if (gbif.Taxonomy.Class != null) sb.AppendLine($"  Class: {gbif.Taxonomy.Class}");
-                if (gbif.Taxonomy.Order != null) sb.AppendLine($"  Order: {gbif.Taxonomy.Order}");
-                if (gbif.Taxonomy.Family != null) sb.AppendLine($"  Family: {gbif.Taxonomy.Family}");
-                if (gbif.Taxonomy.Genus != null) sb.AppendLine($"  Genus: {gbif.Taxonomy.Genus}");
-                if (gbif.Taxonomy.Species != null) sb.AppendLine($"  Species: {gbif.Taxonomy.Species}");
-                if (gbif.Taxonomy.Subspecies != null) sb.AppendLine($"  Subspecies: {gbif.Taxonomy.Subspecies}");
+                await animalRepo.UpdateImageUrlAsync(animalId, gbifImageUrl);
+                await animalRepo.UpdateImageAttributionAsync(animalId,
+                    assembled.GbifImage.License, assembled.GbifImage.RightsHolder, assembled.GbifImage.Publisher);
+                logger.LogInformation("Using GBIF image for {AnimalName}: {ImageUrl} ({License})",
+                    animalName, gbifImageUrl, assembled.GbifImage.License);
+                imageSet = true;
             }
-
-            var mappedIucn = gbif.IucnCategory != null ? MapIucnCategory(gbif.IucnCategory) : null;
-            // Use Wikipedia-extracted IUCN as fallback when GBIF has no status
-            var effectiveIucn = mappedIucn ?? wikiIucnOverride;
-            if (effectiveIucn != null)
+            else
             {
-                sb.AppendLine();
-                sb.AppendLine($"CONSERVATION STATUS (use exactly as provided — do not modify): {effectiveIucn}");
+                logger.LogWarning("GBIF image failed child-safety screening for {AnimalName}, trying fallback", animalName);
             }
-
-            if (gbif.NativeCountries.Count > 0)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"NATIVE RANGE: {string.Join(", ", gbif.NativeCountries.Take(15))}");
-            }
-
-            if (gbif.HabitatProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"HABITAT: {gbif.HabitatProse}");
-            }
-
-            if (gbif.DietProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"DIET: {gbif.DietProse}");
-            }
-
-            if (gbif.BehaviourProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"BEHAVIOUR: {gbif.BehaviourProse}");
-            }
-
-            if (gbif.PhysicalDescriptionProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"PHYSICAL DESCRIPTION: {gbif.PhysicalDescriptionProse}");
-            }
-
-            if (gbif.BreedingProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"BREEDING: {gbif.BreedingProse}");
-            }
-
-            if (gbif.ConservationProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"CONSERVATION NOTES: {gbif.ConservationProse}");
-            }
-
-            if (gbif.DistributionProse != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"DISTRIBUTION: {gbif.DistributionProse}");
-            }
-
-            if (gbif.CanonicalName != null)
-            {
-                sb.AppendLine();
-                sb.AppendLine($"SCIENTIFIC NAME: {gbif.CanonicalName}");
-            }
-
-            sb.AppendLine();
-            sb.AppendLine("=== END PRIMARY DATA ===");
         }
 
-        if (wiki != null)
+        // Priority 2: Wikipedia image
+        if (!imageSet && assembled.WikipediaImageUrl != null)
         {
-            sb.AppendLine();
-            sb.AppendLine("=== SUPPLEMENTARY DATA (from Wikipedia — use to fill gaps not covered by primary data) ===");
-            sb.AppendLine(WikipediaService.FormatAsReference(wiki));
-            sb.AppendLine("=== END SUPPLEMENTARY DATA ===");
+            await animalRepo.UpdateImageUrlAsync(animalId, assembled.WikipediaImageUrl);
+            if (assembled.WikipediaImageLicense != null)
+                await animalRepo.UpdateImageAttributionAsync(animalId,
+                    assembled.WikipediaImageLicense, null, assembled.WikipediaUrl);
+            logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, assembled.WikipediaImageUrl);
+            imageSet = true;
         }
 
-        sb.AppendLine();
-        sb.AppendLine("Using the data above, write an engaging profile. Include: Summary, Description, FunFacts, Tags, and PetCareGuide (if applicable).");
-        sb.AppendLine("Use the provided taxonomy and conservation status exactly as given. Write prose fields (summary, description, habitat, diet, behaviour) in your own words for a young audience.");
+        // Priority 3: Try fetching from old WikipediaService if we didn't get an image from new fetcher
+        if (!imageSet)
+        {
+            var wikiArticle = await wikipediaService.GetAnimalArticleAsync(animalName, ct);
+            if (wikiArticle?.ImageUrl != null)
+            {
+                await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
+                if (wikiArticle.ImageLicense != null)
+                    await animalRepo.UpdateImageAttributionAsync(animalId, wikiArticle.ImageLicense, null, wikiArticle.Url);
+                logger.LogInformation("Using Wikipedia image (fallback) for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
+                imageSet = true;
+            }
+        }
 
-        return sb.ToString();
+        // Priority 4: AI-generated (only if enabled)
+        if (!imageSet && !skipImage && aiConfig.AutoGenerateImages)
+        {
+            var animal = await animalRepo.GetByIdAsync(animalId);
+            if (animal != null)
+            {
+                var imageUrl = await imageService.GenerateAnimalImageAsync(
+                    animal.CommonName, animal.Slug, animal.ScientificName,
+                    animal.Summary, animal.Description, animal.Habitat, animal.SizeInfo, ct);
+                if (imageUrl != null)
+                {
+                    await animalRepo.UpdateImageUrlAsync(animalId, imageUrl);
+                    logger.LogInformation("Generated AI image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
+                }
+            }
+        }
     }
 
-    /// <summary>
-    /// Extracts IUCN conservation status from Wikipedia text (conservation section or summary).
-    /// Wikipedia often has subspecies-level IUCN assessments that GBIF doesn't expose.
-    /// </summary>
-    internal static string? ExtractIucnFromWikipediaText(string? text)
+    private async Task GeneratePetCareGuideAsync(Guid animalId, Animal animal, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-
-        // Match phrases like "listed as Endangered", "classified as Critically Endangered",
-        // "conservation status: Vulnerable", "IUCN Red List as Endangered", etc.
-        // Order matters — check longer phrases first to avoid partial matches
-        var statusKeywords = new (string Pattern, string Status)[]
+        try
         {
-            ("Critically Endangered", "Critically Endangered"),
-            ("Extinct in the Wild", "Extinct in the Wild"),
-            ("Near Threatened", "Near Threatened"),
-            ("Least Concern", "Least Concern"),
-            ("Data Deficient", "Data Deficient"),
-            ("Endangered", "Endangered"),
-            ("Vulnerable", "Vulnerable"),
-            ("Extinct", "Extinct"),
-        };
+            var systemPrompt = """
+                You are a pet care expert writing for a children's animal encyclopedia (ages 8-16).
+                Generate a pet care guide based on the animal information provided.
+                Respond with ONLY valid JSON matching this schema:
+                {
+                    "difficultyRating": 1-5,
+                    "costRangeMin": number,
+                    "costRangeMax": number,
+                    "costCurrency": "GBP",
+                    "spaceRequirement": "string",
+                    "timeCommitment": "string",
+                    "housing": "detailed string",
+                    "dietAsPet": "detailed string",
+                    "exercise": "string",
+                    "grooming": "string",
+                    "healthConcerns": "string",
+                    "training": "string",
+                    "goodWithChildren": true/false,
+                    "goodWithOtherPets": true/false,
+                    "temperament": "string",
+                    "legalConsiderations": "string"
+                }
+                """;
+            var userPrompt = $"Generate a pet care guide for: {animal.CommonName} ({animal.ScientificName})";
+            var response = (await aiService.CompleteAsync(systemPrompt, userPrompt, ct)).Trim();
 
-        foreach (var (pattern, status) in statusKeywords)
-        {
-            if (text.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                return status;
+            // Strip markdown fences
+            if (response.StartsWith("```"))
+            {
+                response = response[response.IndexOf('\n')..];
+                if (response.Contains("```")) response = response[..response.LastIndexOf("```")];
+                response = response.Trim();
+            }
+            if (!response.StartsWith('{'))
+            {
+                var s = response.IndexOf('{');
+                var e = response.LastIndexOf('}');
+                if (s >= 0 && e > s) response = response[s..(e + 1)];
+            }
+
+            var json = JsonDocument.Parse(response);
+            var root = json.RootElement;
+
+            var guide = new PetCareGuide
+            {
+                AnimalId = animalId,
+                DifficultyRating = root.TryGetProperty("difficultyRating", out var dr) ? dr.GetInt32() : 3,
+                CostRangeMin = root.TryGetProperty("costRangeMin", out var cmin) && cmin.ValueKind == JsonValueKind.Number ? cmin.GetDecimal() : null,
+                CostRangeMax = root.TryGetProperty("costRangeMax", out var cmax) && cmax.ValueKind == JsonValueKind.Number ? cmax.GetDecimal() : null,
+                CostCurrency = root.TryGetProperty("costCurrency", out var cc) ? cc.GetString() ?? "GBP" : "GBP",
+                SpaceRequirement = root.TryGetProperty("spaceRequirement", out var sr) ? sr.GetString() : null,
+                TimeCommitment = root.TryGetProperty("timeCommitment", out var tc) ? tc.GetString() : null,
+                Housing = root.TryGetProperty("housing", out var h) ? h.GetString() : null,
+                DietAsPet = root.TryGetProperty("dietAsPet", out var d) ? d.GetString() : null,
+                Exercise = root.TryGetProperty("exercise", out var ex) ? ex.GetString() : null,
+                Grooming = root.TryGetProperty("grooming", out var g) ? g.GetString() : null,
+                HealthConcerns = root.TryGetProperty("healthConcerns", out var hc) ? hc.GetString() : null,
+                Training = root.TryGetProperty("training", out var t) ? t.GetString() : null,
+                GoodWithChildren = root.TryGetProperty("goodWithChildren", out var gc) ? gc.GetBoolean() : null,
+                GoodWithOtherPets = root.TryGetProperty("goodWithOtherPets", out var gp) ? gp.GetBoolean() : null,
+                Temperament = root.TryGetProperty("temperament", out var tmp) ? tmp.GetString() : null,
+                LegalConsiderations = root.TryGetProperty("legalConsiderations", out var lc) ? lc.GetString() : null,
+            };
+            await careRepo.CreateAsync(guide);
         }
-
-        return null;
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to generate pet care guide for {AnimalName}, skipping", animal.CommonName);
+        }
     }
 
-    private static string? MapIucnCategory(string gbifCategory) => gbifCategory switch
+    // ── Helper methods ──────────────────────────────────────────────────────
+
+    private static string? MapConservationCodeToName(string? code) => code switch
     {
-        "LEAST_CONCERN" or "LC" => "Least Concern",
-        "NEAR_THREATENED" or "NT" => "Near Threatened",
-        "VULNERABLE" or "VU" => "Vulnerable",
-        "ENDANGERED" or "EN" => "Endangered",
-        "CRITICALLY_ENDANGERED" or "CR" => "Critically Endangered",
-        "EXTINCT_IN_THE_WILD" or "EW" => "Extinct in the Wild",
-        "EXTINCT" or "EX" => "Extinct",
-        "DATA_DEFICIENT" or "DD" => "Data Deficient",
-        "NOT_EVALUATED" or "NE" => null, // Explicitly return null — don't pass to AI
+        "EX" => "Extinct",
+        "EW" => "Extinct in the Wild",
+        "CR" => "Critically Endangered",
+        "EN" => "Endangered",
+        "VU" => "Vulnerable",
+        "NT" => "Near Threatened",
+        "LC" => "Least Concern",
+        "DD" => "Data Deficient",
+        "NE" => null,
         _ => null,
     };
 
-    private static string? GetStringOrNull(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var val) && val.ValueKind == JsonValueKind.String ? val.GetString() : null;
-
-    private static decimal? GetDecimalOrNull(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var val) && val.ValueKind == JsonValueKind.Number ? val.GetDecimal() : null;
-
-    private static bool? GetBoolOrNull(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var val) && (val.ValueKind == JsonValueKind.True || val.ValueKind == JsonValueKind.False) ? val.GetBoolean() : null;
-
-    /// <summary>
-    /// Attempts to repair common JSON malformations produced by Ollama:
-    /// - Unescaped quotes inside string values
-    /// - Colons where commas are expected (between key-value pairs)
-    /// - Trailing commas before ] or }
-    /// - Control characters inside strings
-    /// </summary>
-    private static string RepairJson(string json)
+    private static string FormatLifespan(AssembledAnimalData data)
     {
-        // Step 1: Fix control characters inside strings (newlines, tabs)
-        json = FixControlCharactersInStrings(json);
-
-        // Step 2: Walk through character by character fixing structural issues
-        var sb = new StringBuilder(json.Length);
-        var inString = false;
-        var escaped = false;
-
-        for (var i = 0; i < json.Length; i++)
-        {
-            var c = json[i];
-
-            if (escaped)
-            {
-                sb.Append(c);
-                escaped = false;
-                continue;
-            }
-
-            if (c == '\\' && inString)
-            {
-                sb.Append(c);
-                escaped = true;
-                continue;
-            }
-
-            if (c == '"' && !escaped)
-            {
-                // Check for unescaped quotes inside strings
-                if (inString)
-                {
-                    // Look ahead: is this the real end of the string?
-                    var afterQuote = SkipWhitespace(json, i + 1);
-                    if (afterQuote < json.Length)
-                    {
-                        var next = json[afterQuote];
-                        // Valid chars after a closing quote: , } ] :
-                        if (next == ',' || next == '}' || next == ']' || next == ':')
-                        {
-                            inString = false;
-                            sb.Append(c);
-                            continue;
-                        }
-
-                        // If next char is another quote (empty string follows or new key),
-                        // this is the real end
-                        if (next == '"')
-                        {
-                            inString = false;
-                            sb.Append(c);
-                            continue;
-                        }
-
-                        // Otherwise this quote is inside the string — escape it
-                        sb.Append('\\');
-                        sb.Append('"');
-                        continue;
-                    }
-                }
-
-                inString = !inString;
-                sb.Append(c);
-                continue;
-            }
-
-            // Fix colon where comma is expected (between values outside strings)
-            if (c == ':' && !inString)
-            {
-                // A colon is valid only after a key (string). Look back to see if previous
-                // non-whitespace token was a closing quote (key) or something else.
-                var beforeColon = SkipWhitespaceBack(sb.ToString(), sb.Length - 1);
-                if (beforeColon >= 0 && sb[beforeColon] == '"')
-                {
-                    // This is a normal key:value separator
-                    sb.Append(c);
-                }
-                else
-                {
-                    // Colon after a value (number, bool, string, array, object) — should be comma
-                    sb.Append(',');
-                }
-                continue;
-            }
-
-            sb.Append(c);
-        }
-
-        var result = sb.ToString();
-
-        // Step 3: Fix trailing commas before } or ]
-        result = Regex.Replace(result, @",\s*([}\]])", "$1");
-
-        return result;
+        var parts = new List<string>();
+        if (data.LifespanWildMinYears != null && data.LifespanWildMaxYears != null)
+            parts.Add($"{data.LifespanWildMinYears}-{data.LifespanWildMaxYears} years in the wild");
+        else if (data.LifespanWildMaxYears != null)
+            parts.Add($"Up to {data.LifespanWildMaxYears} years in the wild");
+        if (data.LifespanCaptivityMinYears != null && data.LifespanCaptivityMaxYears != null)
+            parts.Add($"{data.LifespanCaptivityMinYears}-{data.LifespanCaptivityMaxYears} years in captivity");
+        else if (data.LifespanCaptivityMaxYears != null)
+            parts.Add($"Up to {data.LifespanCaptivityMaxYears} years in captivity");
+        return parts.Count > 0 ? string.Join("; ", parts) : "";
     }
 
-    private static string FixControlCharactersInStrings(string json)
+    private static string FormatSizeInfo(AssembledAnimalData data)
     {
-        // Replace unescaped newlines/tabs inside JSON strings
-        var sb = new StringBuilder(json.Length);
-        var inString = false;
-        var escaped = false;
-
-        foreach (var c in json)
-        {
-            if (escaped)
-            {
-                sb.Append(c);
-                escaped = false;
-                continue;
-            }
-
-            if (c == '\\' && inString)
-            {
-                sb.Append(c);
-                escaped = true;
-                continue;
-            }
-
-            if (c == '"')
-            {
-                inString = !inString;
-                sb.Append(c);
-                continue;
-            }
-
-            if (inString)
-            {
-                switch (c)
-                {
-                    case '\n': sb.Append("\\n"); continue;
-                    case '\r': sb.Append("\\r"); continue;
-                    case '\t': sb.Append("\\t"); continue;
-                }
-            }
-
-            sb.Append(c);
-        }
-
-        return sb.ToString();
+        var parts = new List<string>();
+        if (data.WeightMinKg != null || data.WeightMaxKg != null)
+            parts.Add($"Weight: {FormatWeight(data.WeightMinKg, data.WeightMaxKg)}");
+        if (data.LengthMinCm != null || data.LengthMaxCm != null)
+            parts.Add($"Length: {FormatLength(data.LengthMinCm, data.LengthMaxCm)}");
+        if (data.SpeedMaxKph != null)
+            parts.Add($"Top speed: {data.SpeedMaxKph:0.#} km/h ({data.SpeedMaxKph * 0.621m:0.#} mph)");
+        return string.Join(". ", parts);
     }
 
-    private static int SkipWhitespace(string s, int from)
+    private static string FormatWeight(decimal? min, decimal? max)
     {
-        while (from < s.Length && char.IsWhiteSpace(s[from])) from++;
-        return from;
+        if (min != null && max != null)
+            return $"{min:0.#}-{max:0.#} kg ({min * 2.205m:0.#}-{max * 2.205m:0.#} lb)";
+        if (max != null) return $"Up to {max:0.#} kg ({max * 2.205m:0.#} lb)";
+        if (min != null) return $"From {min:0.#} kg ({min * 2.205m:0.#} lb)";
+        return "";
     }
 
-    private static int SkipWhitespaceBack(string s, int from)
+    private static string FormatLength(decimal? min, decimal? max)
     {
-        while (from >= 0 && char.IsWhiteSpace(s[from])) from--;
-        return from;
+        if (min != null && max != null)
+            return $"{min:0.#}-{max:0.#} cm ({min / 2.54m:0.#}-{max / 2.54m:0.#} in)";
+        if (max != null) return $"Up to {max:0.#} cm ({max / 2.54m:0.#} in)";
+        if (min != null) return $"From {min:0.#} cm ({min / 2.54m:0.#} in)";
+        return "";
     }
 }

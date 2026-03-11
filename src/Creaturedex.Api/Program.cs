@@ -59,6 +59,12 @@ builder.Services.AddHttpClient<GbifService>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("Creaturedex/1.0");
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddHttpClient<WikipediaDataFetcher>(client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Creaturedex/1.0 (animal encyclopedia; contact@creaturedex.com)");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<AnimalDataAssembler>();
 builder.Services.AddHttpClient<ImageScreeningService>();
 builder.Services.AddScoped<AIService>();
 builder.Services.AddScoped<EmbeddingService>();
