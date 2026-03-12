@@ -85,7 +85,7 @@ public class GbifService(
             IucnCode = iucn.Code,
             IucnTaxonId = iucn.IucnTaxonId,
             IucnFromSynonymFallback = iucn.FromSynonym,
-            NativeCountries = await distributionTask,
+            Distribution = await distributionTask,
             VernacularNames = vernaculars,
             BestImage = await imageTask,
             MapMetadata = await mapTask,
@@ -424,7 +424,7 @@ public class GbifService(
             IucnCode = (await iucnTask).Code,
             IucnTaxonId = (await iucnTask).IucnTaxonId,
             IucnFromSynonymFallback = (await iucnTask).FromSynonym,
-            NativeCountries = await distributionTask,
+            Distribution = await distributionTask,
             VernacularNames = vernaculars,
             BestImage = await imageTask,
             MapMetadata = await mapTask,
@@ -994,15 +994,15 @@ public class GbifService(
         return names;
     }
 
-    private async Task<List<string>> FetchDistributionsAsync(int taxonKey, CancellationToken ct)
+    private async Task<GbifDistributionData> FetchDistributionsAsync(int taxonKey, CancellationToken ct)
     {
-        var regions = new List<string>();
+        var result = new GbifDistributionData();
         try
         {
             var url = $"{GbifApiBase}/species/{taxonKey}/distributions?limit=100";
             var json = await GetJsonAsync(url, ct);
 
-            if (!json.TryGetProperty("results", out var results)) return regions;
+            if (!json.TryGetProperty("results", out var results)) return result;
 
             // Overly broad, non-specific, or technical locality values to filter out
             var broadLocalities = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -1013,20 +1013,27 @@ public class GbifService(
 
             // Patterns to skip: OSPAR regions, technical ocean zones, etc.
             var skipPatterns = new[] { "OSPAR", "FAO", "ICES", "EEZ" };
+            var continentSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var item in results.EnumerateArray())
             {
-                var country = item.TryGetProperty("country", out var ctr) ? ctr.GetString() : null;
+                var countryCode = item.TryGetProperty("country", out var ctr) ? ctr.GetString() : null;
                 var locality = item.TryGetProperty("locality", out var loc) ? loc.GetString() : null;
                 var means = item.TryGetProperty("establishmentMeans", out var es) ? es.GetString() : null;
 
                 // Only include native/naturalised ranges, skip introduced
                 if (means is "INTRODUCED" or "INVASIVE") continue;
 
-                string? region = null;
-                if (country != null)
+                if (countryCode != null)
                 {
-                    region = country;
+                    var countryName = ResolveCountryName(countryCode);
+                    if (!result.Countries.Contains(countryName, StringComparer.OrdinalIgnoreCase))
+                        result.Countries.Add(countryName);
+
+                    // Derive continent from ISO country code
+                    var continent = CountryToContinent(countryCode);
+                    if (continent != null)
+                        continentSet.Add(continent);
                 }
                 else if (locality != null)
                 {
@@ -1038,20 +1045,28 @@ public class GbifService(
                     if (System.Text.RegularExpressions.Regex.IsMatch(locality, @"^[A-Z]{2}-[A-Z]{1,3}$")) continue;
                     // Skip technical/regulatory zone names (OSPAR, FAO, etc.)
                     if (skipPatterns.Any(p => locality.Contains(p, StringComparison.OrdinalIgnoreCase))) continue;
-                    // Clean trailing punctuation from source data
-                    region = locality.TrimEnd(',', ' ', '.');
-                }
 
-                if (region != null && !regions.Contains(region))
-                    regions.Add(region);
+                    var cleaned = locality.TrimEnd(',', ' ', '.');
+                    // Check if locality is a continent name
+                    if (IsContinent(cleaned))
+                    {
+                        continentSet.Add(NormaliseContinentName(cleaned));
+                    }
+                    else if (!result.Countries.Contains(cleaned, StringComparer.OrdinalIgnoreCase))
+                    {
+                        result.Countries.Add(cleaned);
+                    }
+                }
             }
+
+            result.Continents.AddRange(continentSet.Order());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogDebug(ex, "GBIF distributions unavailable for taxonKey={TaxonKey}", taxonKey);
         }
 
-        return regions;
+        return result;
     }
 
     private async Task<GbifImageResult?> FetchBestImageAsync(int taxonKey, CancellationToken ct)
@@ -1161,5 +1176,107 @@ public class GbifService(
         var stream = await response.Content.ReadAsStreamAsync(ct);
         var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
         return doc.RootElement.Clone(); // Clone to allow disposal of doc
+    }
+
+    // ── Country name resolution ─────────────────────────────────────────────
+
+    private static string ResolveCountryName(string isoCode)
+    {
+        try
+        {
+            var region = new System.Globalization.RegionInfo(isoCode);
+            return region.EnglishName;
+        }
+        catch
+        {
+            return isoCode; // Return raw code if unrecognised
+        }
+    }
+
+    // ── Continent mapping from ISO 2-letter country codes ───────────────────
+
+    private static readonly Dictionary<string, string> CountryToContinentMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Africa
+        ["DZ"] = "Africa", ["AO"] = "Africa", ["BJ"] = "Africa", ["BW"] = "Africa", ["BF"] = "Africa",
+        ["BI"] = "Africa", ["CM"] = "Africa", ["CV"] = "Africa", ["CF"] = "Africa", ["TD"] = "Africa",
+        ["KM"] = "Africa", ["CG"] = "Africa", ["CD"] = "Africa", ["CI"] = "Africa", ["DJ"] = "Africa",
+        ["EG"] = "Africa", ["GQ"] = "Africa", ["ER"] = "Africa", ["SZ"] = "Africa", ["ET"] = "Africa",
+        ["GA"] = "Africa", ["GM"] = "Africa", ["GH"] = "Africa", ["GN"] = "Africa", ["GW"] = "Africa",
+        ["KE"] = "Africa", ["LS"] = "Africa", ["LR"] = "Africa", ["LY"] = "Africa", ["MG"] = "Africa",
+        ["MW"] = "Africa", ["ML"] = "Africa", ["MR"] = "Africa", ["MU"] = "Africa", ["MA"] = "Africa",
+        ["MZ"] = "Africa", ["NA"] = "Africa", ["NE"] = "Africa", ["NG"] = "Africa", ["RW"] = "Africa",
+        ["ST"] = "Africa", ["SN"] = "Africa", ["SC"] = "Africa", ["SL"] = "Africa", ["SO"] = "Africa",
+        ["ZA"] = "Africa", ["SS"] = "Africa", ["SD"] = "Africa", ["TZ"] = "Africa", ["TG"] = "Africa",
+        ["TN"] = "Africa", ["UG"] = "Africa", ["ZM"] = "Africa", ["ZW"] = "Africa", ["RE"] = "Africa",
+        ["YT"] = "Africa", ["SH"] = "Africa", ["EH"] = "Africa",
+        // Asia
+        ["AF"] = "Asia", ["AM"] = "Asia", ["AZ"] = "Asia", ["BH"] = "Asia", ["BD"] = "Asia",
+        ["BT"] = "Asia", ["BN"] = "Asia", ["KH"] = "Asia", ["CN"] = "Asia", ["CY"] = "Asia",
+        ["GE"] = "Asia", ["IN"] = "Asia", ["ID"] = "Asia", ["IR"] = "Asia", ["IQ"] = "Asia",
+        ["IL"] = "Asia", ["JP"] = "Asia", ["JO"] = "Asia", ["KZ"] = "Asia", ["KW"] = "Asia",
+        ["KG"] = "Asia", ["LA"] = "Asia", ["LB"] = "Asia", ["MY"] = "Asia", ["MV"] = "Asia",
+        ["MN"] = "Asia", ["MM"] = "Asia", ["NP"] = "Asia", ["KP"] = "Asia", ["OM"] = "Asia",
+        ["PK"] = "Asia", ["PS"] = "Asia", ["PH"] = "Asia", ["QA"] = "Asia", ["SA"] = "Asia",
+        ["SG"] = "Asia", ["KR"] = "Asia", ["LK"] = "Asia", ["SY"] = "Asia", ["TW"] = "Asia",
+        ["TJ"] = "Asia", ["TH"] = "Asia", ["TL"] = "Asia", ["TR"] = "Asia", ["TM"] = "Asia",
+        ["AE"] = "Asia", ["UZ"] = "Asia", ["VN"] = "Asia", ["YE"] = "Asia",
+        // Europe
+        ["AL"] = "Europe", ["AD"] = "Europe", ["AT"] = "Europe", ["BY"] = "Europe", ["BE"] = "Europe",
+        ["BA"] = "Europe", ["BG"] = "Europe", ["HR"] = "Europe", ["CZ"] = "Europe", ["DK"] = "Europe",
+        ["EE"] = "Europe", ["FI"] = "Europe", ["FR"] = "Europe", ["DE"] = "Europe", ["GR"] = "Europe",
+        ["HU"] = "Europe", ["IS"] = "Europe", ["IE"] = "Europe", ["IT"] = "Europe", ["XK"] = "Europe",
+        ["LV"] = "Europe", ["LI"] = "Europe", ["LT"] = "Europe", ["LU"] = "Europe", ["MT"] = "Europe",
+        ["MD"] = "Europe", ["MC"] = "Europe", ["ME"] = "Europe", ["NL"] = "Europe", ["MK"] = "Europe",
+        ["NO"] = "Europe", ["PL"] = "Europe", ["PT"] = "Europe", ["RO"] = "Europe", ["RU"] = "Europe",
+        ["SM"] = "Europe", ["RS"] = "Europe", ["SK"] = "Europe", ["SI"] = "Europe", ["ES"] = "Europe",
+        ["SE"] = "Europe", ["CH"] = "Europe", ["UA"] = "Europe", ["GB"] = "Europe", ["VA"] = "Europe",
+        // North America
+        ["AG"] = "North America", ["BS"] = "North America", ["BB"] = "North America", ["BZ"] = "North America",
+        ["CA"] = "North America", ["CR"] = "North America", ["CU"] = "North America", ["DM"] = "North America",
+        ["DO"] = "North America", ["SV"] = "North America", ["GD"] = "North America", ["GT"] = "North America",
+        ["HT"] = "North America", ["HN"] = "North America", ["JM"] = "North America", ["MX"] = "North America",
+        ["NI"] = "North America", ["PA"] = "North America", ["KN"] = "North America", ["LC"] = "North America",
+        ["VC"] = "North America", ["TT"] = "North America", ["US"] = "North America", ["GL"] = "North America",
+        ["PR"] = "North America", ["VI"] = "North America",
+        // South America
+        ["AR"] = "South America", ["BO"] = "South America", ["BR"] = "South America", ["CL"] = "South America",
+        ["CO"] = "South America", ["EC"] = "South America", ["GY"] = "South America", ["PY"] = "South America",
+        ["PE"] = "South America", ["SR"] = "South America", ["UY"] = "South America", ["VE"] = "South America",
+        ["GF"] = "South America", ["FK"] = "South America",
+        // Oceania
+        ["AU"] = "Oceania", ["FJ"] = "Oceania", ["KI"] = "Oceania", ["MH"] = "Oceania",
+        ["FM"] = "Oceania", ["NR"] = "Oceania", ["NZ"] = "Oceania", ["PW"] = "Oceania",
+        ["PG"] = "Oceania", ["WS"] = "Oceania", ["SB"] = "Oceania", ["TO"] = "Oceania",
+        ["TV"] = "Oceania", ["VU"] = "Oceania", ["NC"] = "Oceania", ["GU"] = "Oceania",
+        // Antarctica
+        ["AQ"] = "Antarctica",
+    };
+
+    private static string? CountryToContinent(string isoCode) =>
+        CountryToContinentMap.TryGetValue(isoCode, out var continent) ? continent : null;
+
+    private static readonly HashSet<string> ContinentNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Africa", "Asia", "Europe", "North America", "South America", "Oceania",
+        "Antarctica", "Central America", "Northern Africa", "Southern Africa",
+        "Eastern Africa", "Western Africa", "Sub-Saharan Africa",
+        "Southeast Asia", "South Asia", "East Asia", "Central Asia",
+        "Northern Europe", "Southern Europe", "Western Europe", "Eastern Europe",
+    };
+
+    private static bool IsContinent(string value) => ContinentNames.Contains(value);
+
+    private static string NormaliseContinentName(string value)
+    {
+        // Map sub-regions to their parent continent
+        if (value.Contains("Africa", StringComparison.OrdinalIgnoreCase)) return "Africa";
+        if (value.Contains("Asia", StringComparison.OrdinalIgnoreCase)) return "Asia";
+        if (value.Contains("Europe", StringComparison.OrdinalIgnoreCase)) return "Europe";
+        if (value.Contains("America", StringComparison.OrdinalIgnoreCase))
+            return value.Contains("South", StringComparison.OrdinalIgnoreCase) ? "South America"
+                : value.Contains("Central", StringComparison.OrdinalIgnoreCase) ? "North America"
+                : "North America";
+        return value;
     }
 }

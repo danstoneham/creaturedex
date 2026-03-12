@@ -532,4 +532,74 @@ public class WikipediaMeasurementExtractorTests
         Assert.Equal(120m, result.WeightMinKg);
         Assert.Equal(180m, result.WeightMaxKg);
     }
+
+    // -------------------------------------------------------------------------
+    // Lifespan captivity — broader detection (Task 2)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Extract_LifespanCaptivity_InAZoo()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "They live 12–15 years in the wild. In a zoo, they can live up to 20 years.",
+            null, null);
+
+        Assert.Null(result.LifespanCaptivityMinYears);
+        Assert.Equal(20, result.LifespanCaptivityMaxYears);
+    }
+
+    [Fact]
+    public void Extract_LifespanCaptivity_ManagedCare()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "In managed care, individuals survive 25–30 years.",
+            null, null);
+
+        Assert.Equal(25, result.LifespanCaptivityMinYears);
+        Assert.Equal(30, result.LifespanCaptivityMaxYears);
+    }
+
+    [Fact]
+    public void Extract_LifespanCaptivity_UnderHumanCare()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "Under human care, the species can live up to 35 years.",
+            null, null);
+
+        Assert.Null(result.LifespanCaptivityMinYears);
+        Assert.Equal(35, result.LifespanCaptivityMaxYears);
+    }
+
+    [Fact]
+    public void Extract_LifespanCaptivity_ReversedPattern_InZoos()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "The animal can live over 40 years in zoos.",
+            null, null);
+
+        Assert.Null(result.LifespanCaptivityMinYears);
+        Assert.Equal(40, result.LifespanCaptivityMaxYears);
+    }
+
+    [Fact]
+    public void Extract_LifespanCaptivity_ReversedPattern_InCaptivity()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "They have been known to live up to 50 years in captivity.",
+            null, null);
+
+        Assert.Null(result.LifespanCaptivityMinYears);
+        Assert.Equal(50, result.LifespanCaptivityMaxYears);
+    }
+
+    [Fact]
+    public void Extract_LifespanCaptivity_InAquaria()
+    {
+        var result = WikipediaMeasurementExtractor.Extract(
+            "In aquaria, these fish live 8–12 years.",
+            null, null);
+
+        Assert.Equal(8, result.LifespanCaptivityMinYears);
+        Assert.Equal(12, result.LifespanCaptivityMaxYears);
+    }
 }

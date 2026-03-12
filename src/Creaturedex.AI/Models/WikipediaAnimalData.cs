@@ -18,4 +18,5 @@ public record WikipediaAnimalData
     public string? ImageUrl { get; init; }
     public string? ImageLicense { get; init; }
     public string? PopulationEstimate { get; init; }
+    public string? LegalProtections { get; init; }
 }

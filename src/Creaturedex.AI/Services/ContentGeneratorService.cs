@@ -199,13 +199,17 @@ public class ContentGeneratorService(
                 string.Equals(d.Code, assembled.DomesticationStatusCode, StringComparison.OrdinalIgnoreCase));
             var isPet = domStatus?.IsPet ?? false;
 
-            // 8. Build native region string
+            // 8. Build native region string from full country names
             string? nativeRegion = null;
             if (assembled.NativeCountries.Count > 0)
             {
                 nativeRegion = string.Join(", ", assembled.NativeCountries.Take(10));
                 if (assembled.NativeCountries.Count > 10) nativeRegion += " and others";
                 if (nativeRegion.Length > 500) nativeRegion = nativeRegion[..nativeRegion.LastIndexOf(',', 497)] + "...";
+            }
+            else if (assembled.NativeContinents.Count > 0)
+            {
+                nativeRegion = string.Join(", ", assembled.NativeContinents);
             }
 
             // 9. Create animal with ALL structured columns
@@ -265,6 +269,11 @@ public class ContentGeneratorService(
                 LitterSizeMax = assembled.LitterSizeMax,
                 AlsoKnownAs = assembled.AlsoKnownAs,
                 DistinguishingFeatures = features.Count > 0 ? JsonSerializer.Serialize(features) : null,
+                LegalProtections = assembled.LegalProtections,
+                NativeContinentsJson = assembled.NativeContinents.Count > 0
+                    ? JsonSerializer.Serialize(assembled.NativeContinents) : null,
+                NativeCountriesJson = assembled.NativeCountries.Count > 0
+                    ? JsonSerializer.Serialize(assembled.NativeCountries) : null,
                 ColoursJson = matchedColours.Count > 0 ? JsonSerializer.Serialize(matchedColours) : null,
                 HabitatTypesJson = assembled.HabitatTypeCodes.Count > 0
                     ? JsonSerializer.Serialize(assembled.HabitatTypeCodes) : null,
@@ -387,8 +396,9 @@ public class ContentGeneratorService(
             if (isSafe)
             {
                 await animalRepo.UpdateImageUrlAsync(animalId, gbifImageUrl);
+                var gbifSource = assembled.GbifImage.Publisher ?? "GBIF";
                 await animalRepo.UpdateImageAttributionAsync(animalId,
-                    assembled.GbifImage.License, assembled.GbifImage.RightsHolder, assembled.GbifImage.Publisher);
+                    assembled.GbifImage.License, assembled.GbifImage.RightsHolder, gbifSource);
                 logger.LogInformation("Using GBIF image for {AnimalName}: {ImageUrl} ({License})",
                     animalName, gbifImageUrl, assembled.GbifImage.License);
                 imageSet = true;
@@ -403,9 +413,8 @@ public class ContentGeneratorService(
         if (!imageSet && assembled.WikipediaImageUrl != null)
         {
             await animalRepo.UpdateImageUrlAsync(animalId, assembled.WikipediaImageUrl);
-            if (assembled.WikipediaImageLicense != null)
-                await animalRepo.UpdateImageAttributionAsync(animalId,
-                    assembled.WikipediaImageLicense, null, assembled.WikipediaUrl);
+            await animalRepo.UpdateImageAttributionAsync(animalId,
+                assembled.WikipediaImageLicense ?? "Wikimedia Commons", null, "Wikipedia");
             logger.LogInformation("Using Wikipedia image for {AnimalName}: {ImageUrl}", animalName, assembled.WikipediaImageUrl);
             imageSet = true;
         }
@@ -417,8 +426,8 @@ public class ContentGeneratorService(
             if (wikiArticle?.ImageUrl != null)
             {
                 await animalRepo.UpdateImageUrlAsync(animalId, wikiArticle.ImageUrl);
-                if (wikiArticle.ImageLicense != null)
-                    await animalRepo.UpdateImageAttributionAsync(animalId, wikiArticle.ImageLicense, null, wikiArticle.Url);
+                await animalRepo.UpdateImageAttributionAsync(animalId,
+                    wikiArticle.ImageLicense ?? "Wikimedia Commons", null, "Wikipedia");
                 logger.LogInformation("Using Wikipedia image (fallback) for {AnimalName}: {ImageUrl}", animalName, wikiArticle.ImageUrl);
                 imageSet = true;
             }
@@ -436,6 +445,7 @@ public class ContentGeneratorService(
                 if (imageUrl != null)
                 {
                     await animalRepo.UpdateImageUrlAsync(animalId, imageUrl);
+                    await animalRepo.UpdateImageAttributionAsync(animalId, "AI Generated", null, "Stable Diffusion");
                     logger.LogInformation("Generated AI image for {AnimalName}: {ImageUrl}", animalName, imageUrl);
                 }
             }

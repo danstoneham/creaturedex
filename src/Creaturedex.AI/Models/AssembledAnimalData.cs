@@ -41,6 +41,7 @@ public record AssembledAnimalData
     public string? GbifBehaviourProse { get; init; }
     public string? GbifConservationProse { get; init; }
     public List<string> NativeCountries { get; init; } = [];
+    public List<string> NativeContinents { get; init; } = [];
     public GbifImageResult? GbifImage { get; init; }
     public string? WikipediaImageUrl { get; init; }
     public string? WikipediaImageLicense { get; init; }
@@ -48,5 +49,6 @@ public record AssembledAnimalData
     public GbifMapMetadata? MapMetadata { get; init; }
     public int? GbifTaxonKey { get; init; }
     public string? GbifCanonicalName { get; init; }
+    public string? LegalProtections { get; init; }
     public string CategorySlug { get; init; } = "wild-mammals";
 }

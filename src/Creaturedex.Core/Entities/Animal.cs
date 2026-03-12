@@ -86,6 +86,8 @@ public class Animal
     public string? AlsoKnownAs { get; set; }
     public string? DistinguishingFeatures { get; set; }
     public string? LegalProtections { get; set; }
+    public string? NativeContinentsJson { get; set; }
+    public string? NativeCountriesJson { get; set; }
     public string? ColoursJson { get; set; }
     public string? HabitatTypesJson { get; set; }
 

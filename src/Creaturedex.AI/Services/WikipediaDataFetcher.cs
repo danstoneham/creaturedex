@@ -30,6 +30,19 @@ public partial class WikipediaDataFetcher(
     [GeneratedRegex(@"(?:estimated?\s+(?:at|population\s+of)|population\s+(?:of|estimated?\s+at|is\s+estimated?\s+(?:at|to\s+be)))\s+([\d,]+(?:\s*[-–]\s*[\d,]+)?(?:\s+(?:million|thousand|billion))?)", RegexOptions.IgnoreCase)]
     private static partial Regex PopulationEstimateRegex();
 
+    // Legal protection patterns
+    [GeneratedRegex(@"CITES\s+Appendix\s+(I{1,3}V?|IV)", RegexOptions.IgnoreCase)]
+    private static partial Regex CitesAppendixRegex();
+
+    [GeneratedRegex(@"(?:protected|listed|regulated)\s+(?:under|by)\s+(?:the\s+)?([A-Z][\w\s]+?(?:Act|Directive|Convention|Regulation))", RegexOptions.IgnoreCase)]
+    private static partial Regex LegalActRegex();
+
+    [GeneratedRegex(@"Endangered\s+Species\s+Act", RegexOptions.IgnoreCase)]
+    private static partial Regex EndangeredSpeciesActRegex();
+
+    [GeneratedRegex(@"EU\s+Habitats?\s+Directive", RegexOptions.IgnoreCase)]
+    private static partial Regex EuHabitatsDirectiveRegex();
+
     public async Task<WikipediaAnimalData?> FetchAsync(string animalName, CancellationToken ct = default)
     {
         var cacheKey = $"wiki-data:{animalName.ToLowerInvariant()}";
@@ -138,6 +151,9 @@ public partial class WikipediaDataFetcher(
             var populationEstimate = ExtractPopulationEstimate(conservationText)
                 ?? ExtractPopulationEstimate(fullText);
 
+            // Extract legal protections from conservation text
+            var legalProtections = ExtractLegalProtections(conservationText, null);
+
             var result = new WikipediaAnimalData
             {
                 Title = title,
@@ -154,6 +170,7 @@ public partial class WikipediaDataFetcher(
                 ImageUrl = imageUrl,
                 ImageLicense = imageLicense,
                 PopulationEstimate = populationEstimate,
+                LegalProtections = legalProtections,
             };
 
             logger.LogInformation(
@@ -469,6 +486,40 @@ public partial class WikipediaDataFetcher(
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    internal static string? ExtractLegalProtections(string? conservationText, string? gbifConservationProse)
+    {
+        var combined = string.Join("\n\n",
+            new[] { conservationText, gbifConservationProse }
+                .Where(t => !string.IsNullOrWhiteSpace(t)));
+
+        if (string.IsNullOrWhiteSpace(combined)) return null;
+
+        var protections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // CITES Appendix
+        foreach (Match m in CitesAppendixRegex().Matches(combined))
+            protections.Add($"CITES Appendix {m.Groups[1].Value.Trim()}");
+
+        // Endangered Species Act (explicit check before generic pattern)
+        if (EndangeredSpeciesActRegex().IsMatch(combined))
+            protections.Add("Endangered Species Act");
+
+        // EU Habitats Directive
+        if (EuHabitatsDirectiveRegex().IsMatch(combined))
+            protections.Add("EU Habitats Directive");
+
+        // Generic "protected/listed/regulated under/by [Name] Act/Directive/Convention"
+        foreach (Match m in LegalActRegex().Matches(combined))
+        {
+            var actName = m.Groups[1].Value.Trim();
+            // Avoid duplicating ESA/EU Habitats if already captured
+            if (!protections.Any(p => p.Contains(actName, StringComparison.OrdinalIgnoreCase)))
+                protections.Add(actName);
+        }
+
+        return protections.Count > 0 ? string.Join(", ", protections) : null;
+    }
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;

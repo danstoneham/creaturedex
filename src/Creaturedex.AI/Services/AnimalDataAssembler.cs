@@ -38,10 +38,18 @@ public partial class AnimalDataAssembler(
     // ── Activity pattern mapping ───────────────────────────────────────────
     private static readonly (string[] Keywords, string Code)[] ActivityMappings =
     [
-        (["crepuscular", "dawn and dusk", "dawn or dusk", "twilight"], "crepuscular"),
-        (["diurnal", "daytime", "during the day", "active during day"], "diurnal"),
-        (["nocturnal", "active at night", "active during the night", "after dark", "nighttime"], "nocturnal"),
-        (["cathemeral", "active throughout", "no fixed"], "cathemeral"),
+        (["crepuscular", "dawn and dusk", "dawn or dusk", "twilight", "active at dawn", "most active at dusk"], "crepuscular"),
+        (["diurnal", "daytime", "during the day", "active during day", "active by day", "hunts during the day", "forages during the day"], "diurnal"),
+        (["nocturnal", "active at night", "active during the night", "after dark", "nighttime", "hunts at night", "forages at night", "emerges at night"], "nocturnal"),
+        (["cathemeral", "active throughout", "no fixed", "active day and night"], "cathemeral"),
+    ];
+
+    // ── Population trend mapping (first match wins) ───────────────────────
+    private static readonly (string[] Keywords, string Trend)[] PopulationTrendMappings =
+    [
+        (["declining", "decreasing", "population decline", "numbers declining", "numbers have declined", "population has declined", "population is declining", "fewer than", "populations are declining"], "Decreasing"),
+        (["increasing", "population growing", "numbers increasing", "population recovery", "recovering", "rebounding", "populations are increasing"], "Increasing"),
+        (["stable", "population stable", "numbers stable", "population remains stable", "steady population"], "Stable"),
     ];
 
     // ── Domestication template mapping ─────────────────────────────────────
@@ -121,6 +129,10 @@ public partial class AnimalDataAssembler(
         // 4. Map conservation status
         var conservationCode = MapConservationStatus(wiki?.Infobox?.IucnStatusCode, gbif?.IucnCode);
 
+        // 4b. Extract population trend (infobox takes priority, then keyword match on conservation prose)
+        var conservationProse = CombineTexts(wiki?.ConservationText, gbif?.ConservationProse);
+        var populationTrend = ExtractPopulationTrend(wiki?.Infobox?.PopulationTrend, conservationProse);
+
         // Intro text used by multiple mappers below
         var introText = wiki?.IntroText ?? "";
 
@@ -128,8 +140,8 @@ public partial class AnimalDataAssembler(
         var dietText = CombineTexts(wiki?.DietText, gbif?.DietProse, introText, wiki?.BehaviourText, gbif?.BehaviourProse);
         var dietCode = MapDietType(dietText);
 
-        // 6. Map activity pattern (include intro and habitat — sometimes mentions activity there)
-        var behaviourText = CombineTexts(wiki?.BehaviourText, gbif?.BehaviourProse, introText, wiki?.HabitatText);
+        // 6. Map activity pattern (include intro, habitat, and diet — sometimes mentions hunting times there)
+        var behaviourText = CombineTexts(wiki?.BehaviourText, gbif?.BehaviourProse, introText, wiki?.HabitatText, wiki?.DietText, gbif?.DietProse);
         var activityCode = MapActivityPattern(behaviourText);
 
         // 7. Map domestication status
@@ -142,6 +154,11 @@ public partial class AnimalDataAssembler(
         // 9. Infer tag codes
         var tagCodes = InferTagCodes(gbif?.Taxonomy, conservationCode, domesticationCode,
             behaviourText, introText);
+
+        // 9b. Extract legal protections (combine Wikipedia + GBIF conservation sources)
+        var legalProtections = WikipediaDataFetcher.ExtractLegalProtections(
+            wiki?.ConservationText, gbif?.ConservationProse)
+            ?? wiki?.LegalProtections;
 
         // 10. Derive category slug
         var categorySlug = DeriveCategory(gbif?.Taxonomy, domesticationCode, habitatText, tagCodes);
@@ -157,7 +174,7 @@ public partial class AnimalDataAssembler(
             Slug = slug,
             Taxonomy = gbif?.Taxonomy,
             ConservationStatusCode = conservationCode,
-            PopulationTrend = wiki?.Infobox?.PopulationTrend,
+            PopulationTrend = populationTrend,
             PopulationEstimate = wiki?.PopulationEstimate,
             DietTypeCode = dietCode,
             ActivityPatternCode = activityCode,
@@ -190,7 +207,8 @@ public partial class AnimalDataAssembler(
             GbifDietProse = gbif?.DietProse,
             GbifBehaviourProse = gbif?.BehaviourProse,
             GbifConservationProse = gbif?.ConservationProse,
-            NativeCountries = gbif?.NativeCountries?.ToList() ?? [],
+            NativeCountries = gbif?.Distribution.Countries ?? [],
+            NativeContinents = gbif?.Distribution.Continents ?? [],
             GbifImage = gbif?.BestImage,
             WikipediaImageUrl = wiki?.ImageUrl,
             WikipediaImageLicense = wiki?.ImageLicense,
@@ -198,6 +216,7 @@ public partial class AnimalDataAssembler(
             MapMetadata = gbif?.MapMetadata,
             GbifTaxonKey = gbif?.TaxonKey,
             GbifCanonicalName = gbif?.CanonicalName,
+            LegalProtections = legalProtections,
             CategorySlug = categorySlug,
         };
 
@@ -302,6 +321,41 @@ public partial class AnimalDataAssembler(
             {
                 if (text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
                     return code;
+            }
+        }
+
+        return null;
+    }
+
+    // ── Population trend extraction ────────────────────────────────────
+
+    internal static string? ExtractPopulationTrend(string? infoboxTrend, string conservationText)
+    {
+        // Infobox takes priority if it has a recognisable value
+        if (!string.IsNullOrWhiteSpace(infoboxTrend))
+        {
+            var normalised = infoboxTrend.Trim();
+            if (normalised.Contains("decreas", StringComparison.OrdinalIgnoreCase)
+                || normalised.Contains("declin", StringComparison.OrdinalIgnoreCase))
+                return "Decreasing";
+            if (normalised.Contains("increas", StringComparison.OrdinalIgnoreCase))
+                return "Increasing";
+            if (normalised.Contains("stable", StringComparison.OrdinalIgnoreCase))
+                return "Stable";
+            // Return raw value if it looks intentional (not empty/unknown)
+            if (!normalised.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+                return normalised;
+        }
+
+        // Fallback: keyword match on conservation prose
+        if (string.IsNullOrWhiteSpace(conservationText)) return null;
+
+        foreach (var (keywords, trend) in PopulationTrendMappings)
+        {
+            foreach (var keyword in keywords)
+            {
+                if (conservationText.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    return trend;
             }
         }
 

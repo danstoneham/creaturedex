@@ -57,6 +57,8 @@ CREATE TABLE [dbo].[Animals] (
     [AlsoKnownAs]        NVARCHAR(500)    NULL,
     [DistinguishingFeatures] NVARCHAR(MAX) NULL,
     [LegalProtections]   NVARCHAR(MAX)    NULL,
+    [NativeContinentsJson] NVARCHAR(500)  NULL,
+    [NativeCountriesJson] NVARCHAR(MAX)   NULL,
     [ColoursJson]        NVARCHAR(500)    NULL,
     [HabitatTypesJson]   NVARCHAR(500)    NULL,
     [DataSourceVersion]  INT              NOT NULL DEFAULT 1,

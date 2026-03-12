@@ -18,8 +18,7 @@ public record GbifAnimalData
     public string? IucnTaxonId { get; init; }
     /// <summary>True when IUCN status came from a synonym/parent species fallback, not the taxon itself.</summary>
     public bool IucnFromSynonymFallback { get; init; }
-    public IReadOnlyList<string> NativeCountries { get; init; } = [];
-    public IReadOnlyList<string> NativeRegionSummaries { get; init; } = [];
+    public GbifDistributionData Distribution { get; init; } = new();
     public IReadOnlyList<GbifVernacularName> VernacularNames { get; init; } = [];
     public GbifImageResult? BestImage { get; init; }
     public GbifMapMetadata? MapMetadata { get; init; }
@@ -73,6 +72,12 @@ public record GbifMapMetadata
     public double? MaxLng { get; init; }
     public int? MinYear { get; init; }
     public int? MaxYear { get; init; }
+}
+
+public record GbifDistributionData
+{
+    public List<string> Countries { get; init; } = [];
+    public List<string> Continents { get; init; } = [];
 }
 
 public record GbifSpeciesSuggestion

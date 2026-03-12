@@ -92,7 +92,9 @@ public class AnimalRepository(DbConnectionFactory db)
                 WeightMinKg, WeightMaxKg, LengthMinCm, LengthMaxCm, SpeedMaxKph,
                 LifespanWildMinYears, LifespanWildMaxYears, LifespanCaptivityMinYears, LifespanCaptivityMaxYears,
                 GestationMinDays, GestationMaxDays, LitterSizeMin, LitterSizeMax,
-                AlsoKnownAs, DistinguishingFeatures, LegalProtections, ColoursJson, HabitatTypesJson,
+                AlsoKnownAs, DistinguishingFeatures, LegalProtections,
+                NativeContinentsJson, NativeCountriesJson,
+                ColoursJson, HabitatTypesJson,
                 DataSourceVersion, LastDataFetchAt)
             VALUES (@Id, @Slug, @CommonName, @ScientificName, @Summary, @Description,
                 @CategoryId, @TaxonomyId, @IsPet, @ImageUrl, @ConservationStatus, @NativeRegion,
@@ -106,7 +108,9 @@ public class AnimalRepository(DbConnectionFactory db)
                 @WeightMinKg, @WeightMaxKg, @LengthMinCm, @LengthMaxCm, @SpeedMaxKph,
                 @LifespanWildMinYears, @LifespanWildMaxYears, @LifespanCaptivityMinYears, @LifespanCaptivityMaxYears,
                 @GestationMinDays, @GestationMaxDays, @LitterSizeMin, @LitterSizeMax,
-                @AlsoKnownAs, @DistinguishingFeatures, @LegalProtections, @ColoursJson, @HabitatTypesJson,
+                @AlsoKnownAs, @DistinguishingFeatures, @LegalProtections,
+                @NativeContinentsJson, @NativeCountriesJson,
+                @ColoursJson, @HabitatTypesJson,
                 @DataSourceVersion, @LastDataFetchAt)
             """, animal);
 
@@ -145,7 +149,9 @@ public class AnimalRepository(DbConnectionFactory db)
                 GestationMinDays = @GestationMinDays, GestationMaxDays = @GestationMaxDays,
                 LitterSizeMin = @LitterSizeMin, LitterSizeMax = @LitterSizeMax,
                 AlsoKnownAs = @AlsoKnownAs, DistinguishingFeatures = @DistinguishingFeatures,
-                LegalProtections = @LegalProtections, ColoursJson = @ColoursJson, HabitatTypesJson = @HabitatTypesJson,
+                LegalProtections = @LegalProtections,
+                NativeContinentsJson = @NativeContinentsJson, NativeCountriesJson = @NativeCountriesJson,
+                ColoursJson = @ColoursJson, HabitatTypesJson = @HabitatTypesJson,
                 DataSourceVersion = @DataSourceVersion, LastDataFetchAt = @LastDataFetchAt,
                 Version = Version + 1
             WHERE Id = @Id AND Version = @Version AND DeletedAt IS NULL

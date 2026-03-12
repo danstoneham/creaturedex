@@ -146,10 +146,10 @@ public static partial class WikipediaMeasurementExtractor
         RegexOptions.IgnoreCase)]
     private static partial Regex LifespanCanLiveRegex();
 
-    // Captivity: "in captivity[,] [they/it] [can] live[s] [up to] X[-–]Y years"
+    // Captivity: "in captivity/managed care/a zoo/aquaria[,] [they/it] [can] live[s] [up to] X[-–]Y years"
     // Group 1 = optional "up to" marker, Group 2 = min, Group 3 = optional max
     [GeneratedRegex(
-        @"in\s+captivity\b[^.]{0,60}?(?:live[sd]?|survive[sd]?)\s+(?:for\s+)?(up\s+to\s+)?(?:about\s+)?(" +
+        @"(?:in\s+captivity|in\s+(?:a\s+)?zoos?|in\s+managed\s+care|under\s+human\s+care|in\s+human\s+custody|in\s+(?:a\s+)?zoological|in\s+aquaria|in\s+aquariums)\b[^.]{0,60}?(?:live[sd]?|survive[sd]?)\s+(?:for\s+)?(up\s+to\s+)?(?:about\s+)?(" +
         N + @")(?:" + S + @"(" + N + @"))?\s*years?\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex LifespanCaptivityLivesRegex();
@@ -473,6 +473,16 @@ public static partial class WikipediaMeasurementExtractor
         var sentences = Sentences(text);
         foreach (var s in sentences)
         {
+            // Try reversed pattern first on ALL sentences (captivity context is after the number)
+            var rm = LifespanCaptivityReversedRegex().Match(s);
+            if (rm.Success)
+            {
+                var first = ParseInt(rm.Groups[1].Value);
+                var second = ParseInt(rm.Groups[2].Value);
+                if (first.HasValue)
+                    return (null, second ?? first);  // "over/up to X years in zoos" — max only
+            }
+
             if (!IsCaptivitySentence(s)) continue;
 
             // "in captivity ... live(s) [up to] X[-–]Y years"
@@ -504,10 +514,24 @@ public static partial class WikipediaMeasurementExtractor
         return null;
     }
 
+    // "can live over 40 years in zoos" — captivity context comes AFTER the number
+    [GeneratedRegex(
+        @"(?:live[sd]?|survive[sd]?)\s+(?:for\s+)?(?:over\s+|up\s+to\s+|about\s+|more\s+than\s+)?(" +
+        N + @")(?:" + S + @"(" + N + @"))?\s*years?\s+(?:in\s+(?:zoos?|captivity|aquaria|aquariums)|in\s+managed\s+care|under\s+human\s+care)",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex LifespanCaptivityReversedRegex();
+
     private static bool IsCaptivitySentence(string s) =>
         s.Contains("captivity", StringComparison.OrdinalIgnoreCase)
         || s.Contains("captive", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("in zoos", StringComparison.OrdinalIgnoreCase);
+        || s.Contains("in zoos", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("in a zoo", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("managed care", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("under human care", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("human custody", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("zoological", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("in aquaria", StringComparison.OrdinalIgnoreCase)
+        || s.Contains("in aquariums", StringComparison.OrdinalIgnoreCase);
 
     // -------------------------------------------------------------------------
     // Gestation
