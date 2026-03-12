@@ -31,7 +31,8 @@ builder.Services.AddScoped<ReferenceDataRepository>();
 var aiConfig = builder.Configuration.GetSection("AI").Get<AIConfig>() ?? new AIConfig();
 builder.Services.AddSingleton(aiConfig);
 
-var ollamaClient = new OllamaApiClient(new Uri(aiConfig.OllamaEndpoint));
+var ollamaChatHttp = new HttpClient { BaseAddress = new Uri(aiConfig.OllamaEndpoint), Timeout = TimeSpan.FromMinutes(5) };
+var ollamaClient = new OllamaApiClient(ollamaChatHttp);
 ollamaClient.SelectedModel = aiConfig.ChatModel;
 builder.Services.AddSingleton<IChatClient>(ollamaClient);
 

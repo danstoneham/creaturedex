@@ -9,8 +9,8 @@ public record AssembledAnimalData
     public string? ConservationStatusCode { get; init; }
     public string? PopulationTrend { get; init; }
     public string? PopulationEstimate { get; init; }
-    public string? DietTypeCode { get; init; }
-    public string? ActivityPatternCode { get; init; }
+    public string? DietTypeCode { get; set; }
+    public string? ActivityPatternCode { get; set; }
     public string? DomesticationStatusCode { get; init; }
     public List<string> ColourCodes { get; init; } = [];
     public List<string> HabitatTypeCodes { get; init; } = [];
@@ -20,14 +20,14 @@ public record AssembledAnimalData
     public decimal? LengthMinCm { get; init; }
     public decimal? LengthMaxCm { get; init; }
     public decimal? SpeedMaxKph { get; init; }
-    public int? LifespanWildMinYears { get; init; }
-    public int? LifespanWildMaxYears { get; init; }
-    public int? LifespanCaptivityMinYears { get; init; }
-    public int? LifespanCaptivityMaxYears { get; init; }
-    public int? GestationMinDays { get; init; }
-    public int? GestationMaxDays { get; init; }
-    public int? LitterSizeMin { get; init; }
-    public int? LitterSizeMax { get; init; }
+    public int? LifespanWildMinYears { get; set; }
+    public int? LifespanWildMaxYears { get; set; }
+    public int? LifespanCaptivityMinYears { get; set; }
+    public int? LifespanCaptivityMaxYears { get; set; }
+    public int? GestationMinDays { get; set; }
+    public int? GestationMaxDays { get; set; }
+    public int? LitterSizeMin { get; set; }
+    public int? LitterSizeMax { get; set; }
     public string? AlsoKnownAs { get; init; }
     public string? WikipediaIntroText { get; init; }
     public string? WikipediaDescriptionText { get; init; }

@@ -89,9 +89,9 @@ public partial class WikipediaDataFetcher(
                 habitatText = FindSection(sections,
                     ["habitat", "distribution", "distribution and habitat", "habitat and range", "habitat and distribution", "range", "geography"]);
                 dietText = FindSection(sections,
-                    ["diet", "feeding", "food", "diet and feeding", "feeding ecology"]);
+                    ["diet", "feeding", "food", "diet and feeding", "feeding ecology", "digestion", "foraging"]);
                 behaviourText = FindSection(sections,
-                    ["behaviour", "behavior", "ecology", "ecology and behaviour", "social behaviour"]);
+                    ["behaviour", "behavior", "ecology", "ecology and behaviour", "social behaviour", "social structure", "social"]);
                 conservationText = FindSection(sections,
                     ["conservation", "conservation status", "threats", "conservation and threats"]);
                 reproductionText = FindSection(sections,

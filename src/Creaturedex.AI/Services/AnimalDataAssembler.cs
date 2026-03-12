@@ -20,8 +20,8 @@ public partial class AnimalDataAssembler(
     // ── Diet mapping (first match wins) ────────────────────────────────────
     private static readonly (string[] Keywords, string Code)[] DietMappings =
     [
-        (["carnivore", "carnivorous", "meat", "prey", "predator", "hunts"], "carnivore"),
-        (["herbivore", "herbivorous", "plant", "vegetation", "graze", "browse", "foliage"], "herbivore"),
+        (["herbivore", "herbivorous", "plant", "vegetation", "graze", "grazing", "grazer", "browse", "foliage"], "herbivore"),
+        (["carnivore", "carnivorous", "meat", "predator", "hunts"], "carnivore"),
         (["omnivore", "omnivorous", "variety", "both plants and"], "omnivore"),
         (["insectivore", "insectivorous", "insects", "arthropods"], "insectivore"),
         (["piscivore", "piscivorous", "fish", "fishing"], "piscivore"),
@@ -38,9 +38,9 @@ public partial class AnimalDataAssembler(
     // ── Activity pattern mapping ───────────────────────────────────────────
     private static readonly (string[] Keywords, string Code)[] ActivityMappings =
     [
-        (["diurnal", "daytime", "during the day"], "diurnal"),
-        (["nocturnal", "night", "after dark"], "nocturnal"),
-        (["crepuscular", "dawn", "dusk", "twilight"], "crepuscular"),
+        (["crepuscular", "dawn and dusk", "dawn or dusk", "twilight"], "crepuscular"),
+        (["diurnal", "daytime", "during the day", "active during day"], "diurnal"),
+        (["nocturnal", "active at night", "active during the night", "after dark", "nighttime"], "nocturnal"),
         (["cathemeral", "active throughout", "no fixed"], "cathemeral"),
     ];
 
@@ -121,16 +121,18 @@ public partial class AnimalDataAssembler(
         // 4. Map conservation status
         var conservationCode = MapConservationStatus(wiki?.Infobox?.IucnStatusCode, gbif?.IucnCode);
 
-        // 5. Map diet type
-        var dietText = CombineTexts(wiki?.DietText, gbif?.DietProse, wiki?.BehaviourText, gbif?.BehaviourProse);
+        // Intro text used by multiple mappers below
+        var introText = wiki?.IntroText ?? "";
+
+        // 5. Map diet type (include intro text — often mentions "grazing", "herbivore", etc.)
+        var dietText = CombineTexts(wiki?.DietText, gbif?.DietProse, introText, wiki?.BehaviourText, gbif?.BehaviourProse);
         var dietCode = MapDietType(dietText);
 
-        // 6. Map activity pattern
-        var behaviourText = CombineTexts(wiki?.BehaviourText, gbif?.BehaviourProse);
+        // 6. Map activity pattern (include intro and habitat — sometimes mentions activity there)
+        var behaviourText = CombineTexts(wiki?.BehaviourText, gbif?.BehaviourProse, introText, wiki?.HabitatText);
         var activityCode = MapActivityPattern(behaviourText);
 
         // 7. Map domestication status
-        var introText = wiki?.IntroText ?? "";
         var domesticationCode = MapDomesticationStatus(wiki?.Infobox?.TemplateType, introText);
 
         // 8. Map habitat type codes

@@ -74,7 +74,7 @@ export default function AddAnimalModal({ isOpen, onClose }: AddAnimalModalProps)
   useEffect(() => {
     if (phase !== "search") return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!animalName.trim()) {
+    if (!animalName.trim() || animalName.trim().length < 3) {
       setSuggestions([]);
       setSearched(false);
       return;

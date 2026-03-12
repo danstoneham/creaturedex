@@ -127,9 +127,10 @@ public static partial class WikipediaMeasurementExtractor
     private static partial Regex LifespanLivesRegex();
 
     // "lifespan of X[-–]Y years" / "lifespan is X[-–]Y years" / "lifespan of the X is Y years"
-    // Allow up to 30 chars of arbitrary text between "lifespan" and the number
+    // Allow up to 60 chars of arbitrary text between "lifespan" and the number
+    // e.g. "lifespan of a white rhinoceros is estimated to be 40–50 years"
     [GeneratedRegex(
-        @"lifespan(?:[^0-9]{0,35}?)(" + N + @")(?:" + S + @"(" + N + @"))?\s*years?\b",
+        @"lifespan(?:[^0-9]{0,60}?)(" + N + @")(?:" + S + @"(" + N + @"))?\s*years?\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex LifespanOfRegex();
 
@@ -157,10 +158,12 @@ public static partial class WikipediaMeasurementExtractor
     // Gestation
     // -------------------------------------------------------------------------
 
-    // "gestation (period) [(of)] X[-–]Y days|weeks|months"
+    // "gestation (period) [for a white rhino] [is/of/lasts] [about/approximately] X[-–]Y days|weeks|months"
     // "pregnancy [lasts] X[-–]Y days|weeks|months"
+    // Allows up to 50 chars of arbitrary non-digit text between the keyword group and the number,
+    // so phrases like "for a white rhino is approximately" are handled correctly.
     [GeneratedRegex(
-        @"(?:gestation(?:\s+period)?(?:\s+(?:of|is|lasts?))?|pregnancy(?:\s+lasts?)?)\s+(?:about\s+|approximately\s+|around\s+)?(" +
+        @"(?:gestation(?:\s+period)?|pregnancy)(?:[^0-9]{0,50}?)(?:about\s+|approximately\s+|around\s+)?(" +
         N + @")(?:" + S + @"(" + N + @"))?\s*(days?|weeks?|months?)\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex GestationRegex();
@@ -188,6 +191,14 @@ public static partial class WikipediaMeasurementExtractor
         @"(?:cubs?|pups?|offspring|young|kittens?|calves?|foals?)\b",
         RegexOptions.IgnoreCase)]
     private static partial Regex LitterSizeTypicallyRegex();
+
+    // "gives birth to a single/one/twin calf/pup/..." — handles word-number births without "typically"
+    // Also matches "a single calf is born" style after word normalisation
+    [GeneratedRegex(
+        @"(?:gives?\s+birth\s+to\s+(?:a\s+)?|(?:a|an)\s+)(" + N + @")(?:" + S + @"(" + N + @"))?\s*" +
+        @"(?:cubs?|pups?|offspring|young|kittens?|calves?|foals?|lambs?|fawns?|joeys?|whelps?|infants?|babies|neonates?)\b",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex LitterSizeSingleBirthRegex();
 
     // -------------------------------------------------------------------------
     // Public API
@@ -530,8 +541,12 @@ public static partial class WikipediaMeasurementExtractor
     {
         if (string.IsNullOrEmpty(text)) return null;
 
+        // Pre-process: replace word-numbers with digits so regexes can match them.
+        // "a single calf" → "a 1 calf", "twin cubs" → "2 cubs", etc.
+        var normalised = NormaliseWordNumbers(text);
+
         // "litter(s) of X–Y cubs"
-        var m = LitterSizePrimaryRegex().Match(text);
+        var m = LitterSizePrimaryRegex().Match(normalised);
         if (m.Success)
         {
             var min = ParseInt(m.Groups[1].Value);
@@ -541,7 +556,7 @@ public static partial class WikipediaMeasurementExtractor
         }
 
         // "X–Y cubs per litter"
-        m = LitterSizePerLitterRegex().Match(text);
+        m = LitterSizePerLitterRegex().Match(normalised);
         if (m.Success)
         {
             var min = ParseInt(m.Groups[1].Value);
@@ -551,7 +566,17 @@ public static partial class WikipediaMeasurementExtractor
         }
 
         // "typically X–Y young"
-        m = LitterSizeTypicallyRegex().Match(text);
+        m = LitterSizeTypicallyRegex().Match(normalised);
+        if (m.Success)
+        {
+            var min = ParseInt(m.Groups[1].Value);
+            var max = ParseInt(m.Groups[2].Value);
+            if (min.HasValue)
+                return (min, max ?? min);
+        }
+
+        // "gives birth to a single calf" / "a single calf is born" (after word normalisation)
+        m = LitterSizeSingleBirthRegex().Match(normalised);
         if (m.Success)
         {
             var min = ParseInt(m.Groups[1].Value);
@@ -562,6 +587,26 @@ public static partial class WikipediaMeasurementExtractor
 
         return null;
     }
+
+    /// <summary>
+    /// Replaces English word-numbers used in birth/litter contexts with their digit equivalents,
+    /// so that downstream numeric regexes can match them.
+    /// Only replaces whole-word occurrences to avoid altering unrelated text.
+    /// </summary>
+    private static string NormaliseWordNumbers(string text) =>
+        Regex.Replace(
+            Regex.Replace(
+            Regex.Replace(
+            Regex.Replace(
+            Regex.Replace(
+            Regex.Replace(
+                text,
+                @"\bsingle\b",  "1",   RegexOptions.IgnoreCase),
+                @"\bone\b",     "1",   RegexOptions.IgnoreCase),
+                @"\btwin(?:s)?\b", "2", RegexOptions.IgnoreCase),
+                @"\btwo\b",     "2",   RegexOptions.IgnoreCase),
+                @"\bthree\b",   "3",   RegexOptions.IgnoreCase),
+                @"\bfour\b",    "4",   RegexOptions.IgnoreCase);
 
     // -------------------------------------------------------------------------
     // Unit conversions

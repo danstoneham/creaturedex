@@ -68,43 +68,103 @@ public class ContentGeneratorService(
             var colours = await referenceRepo.GetColoursAsync();
             var colourCodes = colours.Select(c => c.Code).ToList();
 
-            // Run AI tasks in parallel
-            var summaryTask = summariser.SummariseIntroAsync(assembled.CommonName, introText, ct);
-            var descriptionTask = summariser.SummariseDescriptionAsync(
+            // Run AI tasks sequentially — Ollama processes one at a time,
+            // so parallel dispatch just causes timeouts on later tasks
+            logger.LogInformation("Starting AI summarisation for {AnimalName} (8 tasks sequential)", assembled.CommonName);
+
+            var summary = await summariser.SummariseIntroAsync(assembled.CommonName, introText, ct);
+            logger.LogInformation("  [1/8] Intro summary done");
+
+            var description = await summariser.SummariseDescriptionAsync(
                 assembled.CommonName, assembled.WikipediaIntroText,
                 assembled.WikipediaHabitatText ?? assembled.GbifHabitatProse,
                 assembled.WikipediaDietText ?? assembled.GbifDietProse,
                 assembled.WikipediaBehaviourText ?? assembled.GbifBehaviourProse, ct);
-            var funFactsTask = !string.IsNullOrWhiteSpace(fullWikiText)
-                ? summariser.ExtractFunFactsAsync(assembled.CommonName, fullWikiText, ct)
-                : Task.FromResult(new List<string>());
-            var coloursTask = summariser.MatchColoursAsync(
-                assembled.CommonName, assembled.WikipediaDescriptionText, colourCodes, ct);
-            var featuresTask = summariser.ExtractDistinguishingFeaturesAsync(
-                assembled.CommonName, assembled.WikipediaDescriptionText, ct);
+            logger.LogInformation("  [2/8] Description done");
 
-            // Summarise individual sections
-            var habitatTask = summariser.SummariseSectionAsync(
+            var funFacts = !string.IsNullOrWhiteSpace(fullWikiText)
+                ? await summariser.ExtractFunFactsAsync(assembled.CommonName, fullWikiText, ct)
+                : new List<string>();
+            logger.LogInformation("  [3/8] Fun facts done ({Count} facts)", funFacts.Count);
+
+            var matchedColours = await summariser.MatchColoursAsync(
+                assembled.CommonName, assembled.WikipediaDescriptionText, colourCodes, ct);
+            logger.LogInformation("  [4/8] Colours done ({Count} colours)", matchedColours.Count);
+
+            var features = await summariser.ExtractDistinguishingFeaturesAsync(
+                assembled.CommonName, assembled.WikipediaDescriptionText, ct);
+            logger.LogInformation("  [5/8] Features done ({Count} features)", features.Count);
+
+            var habitatSummary = await summariser.SummariseSectionAsync(
                 assembled.CommonName, "habitat",
                 assembled.WikipediaHabitatText ?? assembled.GbifHabitatProse, ct);
-            var dietTask = summariser.SummariseSectionAsync(
+            logger.LogInformation("  [6/8] Habitat summary done");
+
+            var dietSummary = await summariser.SummariseSectionAsync(
                 assembled.CommonName, "diet",
                 assembled.WikipediaDietText ?? assembled.GbifDietProse, ct);
-            var behaviourTask = summariser.SummariseSectionAsync(
+            logger.LogInformation("  [7/8] Diet summary done");
+
+            var behaviourSummary = await summariser.SummariseSectionAsync(
                 assembled.CommonName, "behaviour",
                 assembled.WikipediaBehaviourText ?? assembled.GbifBehaviourProse, ct);
+            logger.LogInformation("  [8/8] Behaviour summary done");
 
-            await Task.WhenAll(summaryTask, descriptionTask, funFactsTask,
-                coloursTask, featuresTask, habitatTask, dietTask, behaviourTask);
+            // 4b. AI fallback for missing structured measurements (98%+ confidence required)
+            var fullText = CombineTexts(assembled.WikipediaIntroText,
+                assembled.WikipediaDescriptionText, assembled.WikipediaHabitatText,
+                assembled.WikipediaDietText, assembled.WikipediaBehaviourText,
+                assembled.WikipediaConservationText, assembled.WikipediaReproductionText);
 
-            var summary = await summaryTask;
-            var description = await descriptionTask;
-            var funFacts = await funFactsTask;
-            var matchedColours = await coloursTask;
-            var features = await featuresTask;
-            var habitatSummary = await habitatTask;
-            var dietSummary = await dietTask;
-            var behaviourSummary = await behaviourTask;
+            var missingFields = new List<string>();
+            if (assembled.LifespanWildMinYears == null) missingFields.Add("lifespanWildYears");
+            if (assembled.LifespanCaptivityMinYears == null) missingFields.Add("lifespanCaptivityYears");
+            if (assembled.GestationMinDays == null) missingFields.Add("gestationDays");
+            if (assembled.LitterSizeMin == null) missingFields.Add("litterSize");
+            if (assembled.ActivityPatternCode == null) missingFields.Add("activityPattern");
+            if (assembled.DietTypeCode == null) missingFields.Add("dietType");
+
+            if (missingFields.Count > 0)
+            {
+                logger.LogInformation("  [AI fallback] Inferring {Count} missing fields: {Fields}",
+                    missingFields.Count, string.Join(", ", missingFields));
+
+                var inferred = await summariser.InferMissingMeasurementsAsync(
+                    assembled.CommonName, fullText, missingFields, ct);
+
+                // Apply inferred values to assembled data
+                foreach (var (field, value) in inferred)
+                {
+                    switch (field)
+                    {
+                        case "lifespanWildYears":
+                            assembled.LifespanWildMinYears = value.Min;
+                            assembled.LifespanWildMaxYears = value.Max ?? value.Min;
+                            break;
+                        case "lifespanCaptivityYears":
+                            assembled.LifespanCaptivityMinYears = value.Min;
+                            assembled.LifespanCaptivityMaxYears = value.Max ?? value.Min;
+                            break;
+                        case "gestationDays":
+                            assembled.GestationMinDays = value.Min;
+                            assembled.GestationMaxDays = value.Max ?? value.Min;
+                            break;
+                        case "litterSize":
+                            assembled.LitterSizeMin = value.Min;
+                            assembled.LitterSizeMax = value.Max ?? value.Min;
+                            break;
+                        case "activityPattern":
+                            assembled.ActivityPatternCode = value.StringValue;
+                            break;
+                        case "dietType":
+                            assembled.DietTypeCode = value.StringValue;
+                            break;
+                    }
+                }
+
+                logger.LogInformation("  [AI fallback] Accepted {Count}/{Total} inferred values",
+                    inferred.Count, missingFields.Count);
+            }
 
             // 5. Resolve category
             var category = await categoryRepo.GetBySlugAsync(assembled.CategorySlug);
@@ -515,5 +575,11 @@ public class ContentGeneratorService(
         if (max != null) return $"Up to {max:0.#} cm ({max / 2.54m:0.#} in)";
         if (min != null) return $"From {min:0.#} cm ({min / 2.54m:0.#} in)";
         return "";
+    }
+
+    private static string CombineTexts(params string?[] texts)
+    {
+        var nonEmpty = texts.Where(t => !string.IsNullOrWhiteSpace(t));
+        return string.Join("\n\n", nonEmpty);
     }
 }

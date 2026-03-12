@@ -3,6 +3,8 @@ namespace Creaturedex.AI.Services;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
+public record InferredValue(int? Min, int? Max, string? StringValue, int Confidence);
+
 public class ContentSummariser(
     AIService aiService,
     ILogger<ContentSummariser> logger)
@@ -124,6 +126,112 @@ public class ContentSummariser(
             - Output ONLY the summary, nothing else
             """;
         return (await aiService.CompleteAsync(systemPrompt, sectionText, ct)).Trim();
+    }
+
+    // 7. AI fallback for missing structured measurements
+    // Only accepts values where the AI reports >= 98% confidence.
+    public async Task<Dictionary<string, InferredValue>> InferMissingMeasurementsAsync(
+        string commonName, string fullText, IReadOnlyList<string> missingFields,
+        CancellationToken ct = default)
+    {
+        if (missingFields.Count == 0 || string.IsNullOrWhiteSpace(fullText))
+            return [];
+
+        var systemPrompt = """
+            You are a precise data extraction tool for an animal encyclopedia.
+            Given text about an animal, extract the requested measurements.
+
+            Rules:
+            - Use ONLY facts explicitly stated in the provided text
+            - Do NOT invent, estimate, or guess any values
+            - For each field, provide your confidence as a percentage (0-100)
+            - Only report a value if you are >= 98% certain it is correct based on the text
+            - Output as a JSON object where each key is a field name and the value is an object with "value" and "confidence"
+            - For ranges, use "min" and "max" keys inside the value object
+            - For single values, use "value" key
+            - If the data is not clearly stated in the text, set confidence to 0 and value to null
+            - Output ONLY the JSON object, nothing else
+
+            Field types:
+            - lifespanWildYears: integer range (min/max years in the wild)
+            - lifespanCaptivityYears: integer range (min/max years in captivity)
+            - gestationDays: integer range (min/max days, convert from months/weeks if needed: 1 month = 30 days, 1 week = 7 days)
+            - litterSize: integer range (min/max offspring per birth, "single" = 1)
+            - activityPattern: one of "diurnal", "nocturnal", "crepuscular", "cathemeral"
+            - dietType: one of "herbivore", "carnivore", "omnivore", "insectivore", "piscivore", "frugivore"
+
+            Example output:
+            {"gestationDays": {"min": 480, "max": 480, "confidence": 99}, "litterSize": {"min": 1, "max": 1, "confidence": 98}}
+            """;
+
+        var fieldsStr = string.Join(", ", missingFields);
+        var userPrompt = $"Animal: {commonName}\n\nExtract these fields: {fieldsStr}\n\nSource text:\n{fullText}";
+
+        try
+        {
+            var response = (await aiService.CompleteAsync(systemPrompt, userPrompt, ct)).Trim();
+            return ParseMeasurementResponse(response, missingFields);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "AI measurement inference failed for {AnimalName}", commonName);
+            return [];
+        }
+    }
+
+    private Dictionary<string, InferredValue> ParseMeasurementResponse(
+        string response, IReadOnlyList<string> requestedFields)
+    {
+        var results = new Dictionary<string, InferredValue>();
+        try
+        {
+            // Extract JSON from response (may have surrounding text)
+            var start = response.IndexOf('{');
+            var end = response.LastIndexOf('}');
+            if (start < 0 || end <= start) return results;
+
+            var json = response[start..(end + 1)];
+            var doc = JsonSerializer.Deserialize<JsonElement>(json);
+
+            foreach (var field in requestedFields)
+            {
+                if (!doc.TryGetProperty(field, out var fieldEl)) continue;
+
+                var confidence = fieldEl.TryGetProperty("confidence", out var confEl)
+                    ? confEl.GetInt32() : 0;
+
+                if (confidence < 98)
+                {
+                    logger.LogDebug("AI inference for {Field}: confidence {Confidence}% < 98%, skipping",
+                        field, confidence);
+                    continue;
+                }
+
+                // Extract the value based on field type
+                if (fieldEl.TryGetProperty("min", out var minEl) && fieldEl.TryGetProperty("max", out var maxEl))
+                {
+                    results[field] = new InferredValue(
+                        minEl.ValueKind == JsonValueKind.Number ? minEl.GetInt32() : null,
+                        maxEl.ValueKind == JsonValueKind.Number ? maxEl.GetInt32() : null,
+                        null, confidence);
+                }
+                else if (fieldEl.TryGetProperty("value", out var valEl))
+                {
+                    var strVal = valEl.ValueKind == JsonValueKind.String ? valEl.GetString() : null;
+                    var intVal = valEl.ValueKind == JsonValueKind.Number ? valEl.GetInt32() : (int?)null;
+                    results[field] = new InferredValue(intVal, null, strVal, confidence);
+                }
+
+                logger.LogInformation("AI inference accepted for {Field}: confidence {Confidence}%",
+                    field, confidence);
+            }
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Failed to parse AI measurement response: {Response}", response);
+        }
+
+        return results;
     }
 
     // JSON array parser with fallback for malformed responses
